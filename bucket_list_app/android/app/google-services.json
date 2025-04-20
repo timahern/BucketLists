@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "273351697779",
+    "project_id": "bucketapp-ecc03",
+    "storage_bucket": "bucketapp-ecc03.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:273351697779:android:0f086049f12a8f187a9106",
+        "android_client_info": {
+          "package_name": "com.example.bucket_list_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAM-fIACG2zQt0E5Any0Xbf1p6uUsknT_U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

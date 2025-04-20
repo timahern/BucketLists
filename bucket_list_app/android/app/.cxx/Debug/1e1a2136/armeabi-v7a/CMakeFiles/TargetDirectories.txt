@@ -1,0 +1,2 @@
+C:/Users/timah/OneDrive/Desktop/BUCKET/bucket_list_app/android/app/.cxx/Debug/1e1a2136/armeabi-v7a/CMakeFiles/edit_cache.dir
+C:/Users/timah/OneDrive/Desktop/BUCKET/bucket_list_app/android/app/.cxx/Debug/1e1a2136/armeabi-v7a/CMakeFiles/rebuild_cache.dir
