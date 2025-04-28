@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'bucket_list_screen.dart';
 import '../models/bucket_list.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -137,22 +139,43 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _deleteBucketList(BucketList list) async {
     final bucketListRef = FirebaseFirestore.instance.collection('bucket_lists').doc(list.id);
 
-    // 1 Find all bucket items related to this list
-    final itemsQuery = await FirebaseFirestore.instance
-        .collection('bucket_items')
-        .where('bucket_list_ref', isEqualTo: bucketListRef)
-        .get();
+    try {
+      // 1️⃣ Find all bucket items related to this list
+      final itemsQuery = await FirebaseFirestore.instance
+          .collection('bucket_items')
+          .where('bucket_list_ref', isEqualTo: bucketListRef)
+          .get();
 
-    // 2 Delete each item
-    for (var doc in itemsQuery.docs) {
-      await doc.reference.delete();
+      // 2️⃣ For each bucket item, delete associated media
+      for (var doc in itemsQuery.docs) {
+        List<dynamic> mediaUrls = doc['mediaUrls'] ?? [];
+        for (String url in mediaUrls) {
+          try {
+            final ref = FirebaseStorage.instance.refFromURL(url);
+            await ref.delete();
+            print('✅ Deleted media: $url');
+          } catch (e) {
+            print('❌ Failed to delete media: $url, error: $e');
+          }
+        }
+
+        // 3️⃣ After deleting media, delete the bucket item itself
+        await doc.reference.delete();
+        print('✅ Deleted bucket item: ${doc.id}');
+      }
+
+      // 4️⃣ After all bucket items are deleted, delete the bucket list itself
+      await bucketListRef.delete();
+      print('✅ Deleted bucket list: ${list.id}');
+
+      // 5️⃣ Refresh the home screen lists
+      await _loadBucketLists();
+    } catch (e) {
+      print('❌ Failed to fully delete bucket list: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete bucket list: $e')),
+      );
     }
-
-    // 3 Finally, delete the bucket list itself
-    await bucketListRef.delete();
-
-    // 4 Refresh
-    _loadBucketLists();
   }
 
   @override

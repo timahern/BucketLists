@@ -4,6 +4,9 @@ import '../models/bucket_list.dart';
 import '../models/bucket_item.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart'; // <-- Make sure this is imported at the top
+
+
 
 class BucketListScreen extends StatefulWidget {
   final BucketList bucketList;
@@ -151,21 +154,42 @@ class _BucketListScreenState extends State<BucketListScreen> {
         .collection('bucket_lists')
         .doc(widget.bucketList.id);
 
-    // 1 Remove reference from bucket_list first
-    await bucketListDocRef.update({
-      'items': FieldValue.arrayRemove([itemDoc.reference])
-    });
+    try {
+      // 1️⃣ First: Delete all associated media files
+      List<dynamic> mediaUrls = itemDoc['mediaUrls'] ?? [];
+      for (String url in mediaUrls) {
+        try {
+          final ref = FirebaseStorage.instance.refFromURL(url);
+          await ref.delete();
+          print('✅ Deleted media: $url');
+        } catch (e) {
+          print('❌ Failed to delete media: $url, error: $e');
+        }
+      }
 
-    // 2 THEN delete the actual bucket item
-    await itemDoc.reference.delete();
+      // 2️⃣ Remove reference from bucket_list document
+      await bucketListDocRef.update({
+        'items': FieldValue.arrayRemove([itemDoc.reference])
+      });
 
-    // 3 Refresh parent bucket list's reference array to avoid fetching a non-existent ref
-    final updatedDoc = await bucketListDocRef.get();
-    widget.bucketList.items = List<DocumentReference>.from(updatedDoc['items']);
+      // 3️⃣ THEN delete the actual bucket item document
+      await itemDoc.reference.delete();
 
-    // 4 Reload bucket items now with fresh refs
-    await _loadBucketItems();
-    widget.onUpdate();
+      print('✅ Bucket item deleted');
+
+      // 4️⃣ Refresh parent bucket list's reference array
+      final updatedDoc = await bucketListDocRef.get();
+      widget.bucketList.items = List<DocumentReference>.from(updatedDoc['items']);
+
+      // 5️⃣ Reload bucket items
+      await _loadBucketItems();
+      widget.onUpdate();
+    } catch (e) {
+      print('❌ Failed to fully delete bucket item: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete bucket item: $e')),
+      );
+    }
   }
 
   @override
@@ -277,13 +301,26 @@ class _BucketListScreenState extends State<BucketListScreen> {
                         ),
                       ),
                       value: item['completed'],
-                      //onChanged: (_) => _toggleComplete(index),
-                      onChanged: (_) => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => BucketItemScreen(bucketItem: BucketItem.fromFirestore(item), onUpdate: _loadBucketItems),
-                        ),
-                      ),
+                      
+                      //onChanged: (_) => Navigator.push(
+                      //  context,
+                      //  MaterialPageRoute(
+                      //    builder: (context) => BucketItemScreen(bucketItem: BucketItem.fromFirestore(item), onUpdate: widget.onUpdate),
+                      //  ),
+                      //),
+
+                      onChanged: (_) async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => BucketItemScreen(
+                              bucketItem: BucketItem.fromFirestore(item),
+                              onUpdate: widget.onUpdate,
+                            ),
+                          ),
+                        );
+                        await _loadBucketItems(); // <-- Reload after coming back!
+                      },
 
                       //send user to the bucket item screen
                       //onTap: () => 

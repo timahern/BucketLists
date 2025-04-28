@@ -228,6 +228,31 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
   }
 
 
+  //updates the completed checkbox and boolean value for the bucket item
+  Future<void> updateCompleted(bool completed) async {
+    try {
+      final itemRef = FirebaseFirestore.instance
+          .collection('bucket_items')
+          .doc(widget.bucketItem.id);
+
+      await itemRef.update({
+        'completed': completed,
+      });
+
+      print("✅ Completion status updated.");
+
+      setState(() {
+        widget.bucketItem.completed = completed;
+      });
+
+      widget.onUpdate();
+    } catch (e) {
+      print("❌ Failed to update completed status: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update completion status: $e')),
+      );
+    }
+  }
 
 
 
@@ -271,15 +296,40 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
                 ),
               ),
           
-              Align(
-                alignment: Alignment.topLeft,
-                child: IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-                    onPressed: () {
-                      Navigator.pop(context);
-                    },
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          'Completed',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                        ),
+                        Checkbox(
+                          value: widget.bucketItem.completed,
+                          activeColor: Colors.white,
+                          checkColor: Colors.deepPurple,
+                          onChanged: (bool? newValue) async {
+                            if (newValue != null) {
+                              await updateCompleted(newValue);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                
               ),
           
               SizedBox(height: 20), 
