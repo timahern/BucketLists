@@ -20,19 +20,27 @@ class BucketItemScreen extends StatefulWidget {
 
 class _BucketItemScreenState extends State<BucketItemScreen> {
 
+  TextEditingController _descriptionController = TextEditingController();
+
   final ImagePicker picker = ImagePicker();
   late PageController _pageController;
   int _currentPage = 0;
 
   @override
   void initState() {
+
     super.initState();
+    _descriptionController = TextEditingController(
+      text: widget.bucketItem.description ?? '',
+    );
+
     _pageController = PageController(viewportFraction: 0.85);
    // _pageController = PageController();
   }
 
   @override
   void dispose() {
+    _descriptionController.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -193,6 +201,31 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
   }
 
 
+  //saving the description function
+  Future<void> saveDescription(String newDescription) async {
+    try {
+      final itemRef = FirebaseFirestore.instance
+          .collection('bucket_items')
+          .doc(widget.bucketItem.id);
+
+      await itemRef.update({
+        'description': newDescription,
+      });
+
+      print("✅ Description updated.");
+      
+      setState(() {
+        widget.bucketItem.description = newDescription;
+      });
+
+      widget.onUpdate();
+    } catch (e) {
+      print("❌ Failed to update description: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update description: $e')),
+      );
+    }
+  }
 
 
 
@@ -212,82 +245,116 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
 
-        body: Column(
-          children: [
-            Align(
-              alignment: Alignment.center,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 20.0),
-                child: Text(
-                  widget.bucketItem.itemName,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black38,
-                        offset: Offset(2, 2),
-                        blurRadius: 4,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            Align(
-              alignment: Alignment.topLeft,
-              child: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-              ),
-              
-            ),
-
-            SizedBox(height: 20), 
-
-            //CONDITIONAL STATEMENT image (placeholder, will later be a photo carousel)
-            ...(widget.bucketItem.mediaUrls.isEmpty
-            ? [
-              Image(
-                image: AssetImage('assets/images/italy-pisa-leaning-tower.jpg'),
-                width: double.infinity, // Adjust size as needed
-                height: 300,
-              ),
-            ]
-            : carousel()),
-            
-            
-
-            //Button for adding pictures to users mediaUrls list
-            GestureDetector(
-              onTap: addPicture,
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Container(
-                  padding: EdgeInsets.all(15),
-                  decoration: BoxDecoration(
-                    color: Colors.deepPurple,
-                    borderRadius: BorderRadius.circular(12)
-                  ),
+        body: SingleChildScrollView(
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.center,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 20.0),
                   child: Text(
-                    'Add Photos',
-                    style: TextStyle(
-                      color: Colors.white,
+                    widget.bucketItem.itemName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 32,
                       fontWeight: FontWeight.bold,
-                      fontSize: 18,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black38,
+                          offset: Offset(2, 2),
+                          blurRadius: 4,
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
-            ),
-            
-          ],
-            
+          
+              Align(
+                alignment: Alignment.topLeft,
+                child: IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                ),
+                
+              ),
+          
+              SizedBox(height: 20), 
+          
+              //CONDITIONAL STATEMENT image (placeholder, will later be a photo carousel)
+              ...(widget.bucketItem.mediaUrls.isEmpty
+              ? [
+                Image(
+                  image: AssetImage('assets/images/italy-pisa-leaning-tower.jpg'),
+                  width: double.infinity, // Adjust size as needed
+                  height: 300,
+                ),
+              ]
+              : carousel()),
+              
+              
+          
+              //Button for adding pictures to users mediaUrls list
+              GestureDetector(
+                onTap: addPicture,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Container(
+                    padding: EdgeInsets.all(15),
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple,
+                      borderRadius: BorderRadius.circular(12)
+                    ),
+                    child: Text(
+                      'Add Photos',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              
+              //Description box for the bucket item (might be moved above the photos later)
+          
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: TextField(
+                        controller: _descriptionController,
+                        maxLines: 5,
+                        decoration: InputDecoration(
+                          hintText: "Write about your trip...",
+                          contentPadding: EdgeInsets.all(16),
+                          border: InputBorder.none,
+                        ),
+                        onChanged: (value) {
+                          saveDescription(value);
+                        }
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          
+          
+          
+            ],
+              
+          ),
         )
 
         
