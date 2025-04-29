@@ -45,6 +45,7 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
     super.dispose();
   }
 
+  
   Future<void> addPicture() async {
     try {
       // Ask user to choose photo source
@@ -74,57 +75,83 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
 
       print("🟡 User selected source: $source");
 
-      final XFile? pickedFile = await picker.pickImage(
-        source: source,
-        imageQuality: 75,
-      );
+      List<XFile> pickedFiles = [];
 
-      if (pickedFile == null) {
+      if (source == ImageSource.gallery) {
+        pickedFiles = await picker.pickMultiImage(imageQuality: 75) ?? [];
+      } else if (source == ImageSource.camera) {
+        final XFile? pickedFile = await picker.pickImage(source: ImageSource.camera, imageQuality: 75);
+        if (pickedFile != null) {
+          pickedFiles = [pickedFile];
+        }
+      }
+
+      if (pickedFiles.isEmpty) {
         print("🟡 No file selected.");
         return;
       }
 
-      print("🟢 Image selected: ${pickedFile.name}");
-
-      final fileName = DateTime.now().millisecondsSinceEpoch.toString();
-      final storageRef = FirebaseStorage.instance
-          .ref()
-          .child('bucket_item_images')
-          .child(widget.bucketItem.id)
-          .child(fileName);
-
-      try {
-        print("🟡 Uploading to Firebase Storage...");
-        await storageRef.putData(await pickedFile.readAsBytes());
-        print("✅ Upload complete. Getting download URL...");
-      } catch (uploadError) {
-        print("❌ Firebase upload error: $uploadError");
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: $uploadError')),
-        );
-        return;
-      }
-
-
-      final downloadUrl = await storageRef.getDownloadURL();
-
-      print("✅ Download URL: $downloadUrl");
+      print("🟢 Number of images selected: ${pickedFiles.length}");
 
       final itemRef = FirebaseFirestore.instance
           .collection('bucket_items')
           .doc(widget.bucketItem.id);
 
-      await itemRef.update({
-        'mediaUrls': FieldValue.arrayUnion([downloadUrl])
-      });
+      List<String> newDownloadUrls = [];
 
-      print("✅ Firestore updated.");
+      const int maxSizeInBytes = 5 * 1024 * 1024; // 5 * 1024 * 1024 = 5 MB limit
 
-      setState(() {
-        widget.bucketItem.mediaUrls.add(downloadUrl);
-      });
+      for (var pickedFile in pickedFiles) {
+        final int fileSize = await pickedFile.length();
 
-      widget.onUpdate();
+        if (fileSize > maxSizeInBytes) {
+          print("❌ Skipping ${pickedFile.name} — too large: ${fileSize / (1024 * 1024)} MB");
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${pickedFile.name} is too large (limit is 5 MB)',
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+          );
+          continue; // Skip this file
+        }
+
+        final fileName = DateTime.now().millisecondsSinceEpoch.toString() + "_" + pickedFile.name;
+        final storageRef = FirebaseStorage.instance
+            .ref()
+            .child('bucket_item_images')
+            .child(widget.bucketItem.id)
+            .child(fileName);
+
+        try {
+          print("🟡 Uploading ${pickedFile.name}...");
+          await storageRef.putData(await pickedFile.readAsBytes());
+          print("✅ Upload complete. Getting download URL...");
+          final downloadUrl = await storageRef.getDownloadURL();
+          newDownloadUrls.add(downloadUrl);
+        } catch (uploadError) {
+          print("❌ Upload error for ${pickedFile.name}: $uploadError");
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Upload failed: $uploadError')),
+          );
+        }
+      }
+
+      if (newDownloadUrls.isNotEmpty) {
+        await itemRef.update({
+          'mediaUrls': FieldValue.arrayUnion(newDownloadUrls),
+        });
+
+        print("✅ Firestore updated with new images.");
+
+        setState(() {
+          widget.bucketItem.mediaUrls.addAll(newDownloadUrls);
+        });
+
+        widget.onUpdate();
+      }
     } catch (e) {
       print("❌ Error during image upload: $e");
       ScaffoldMessenger.of(context).showSnackBar(
@@ -132,6 +159,9 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
       );
     }
   }
+
+
+
 
   List<Widget> carousel() {
     return [
