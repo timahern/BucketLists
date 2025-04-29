@@ -135,11 +135,56 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> showLoadingDialog(BuildContext dialogContext, {required String message}) async {
+    showDialog(
+      barrierDismissible: false,
+      context: dialogContext,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          content: Row(
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   // Delete bucket list from Firestore
   Future<void> _deleteBucketList(BucketList list) async {
     final bucketListRef = FirebaseFirestore.instance.collection('bucket_lists').doc(list.id);
 
+    //BuildContext dialogContext;
     try {
+
+      // 0️⃣ Show loading dialog
+      showDialog(
+        barrierDismissible: false,
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            content: Row(
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 20),
+                const Text('Deleting...'),
+              ],
+            ),
+          );
+        },
+      );
+
+
       // 1️⃣ Find all bucket items related to this list
       final itemsQuery = await FirebaseFirestore.instance
           .collection('bucket_items')
@@ -175,6 +220,9 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to delete bucket list: $e')),
       );
+    }finally {
+      // 6️⃣ Dismiss the loading dialog
+      Navigator.of(context, rootNavigator: true).pop();
     }
   }
 
@@ -256,8 +304,34 @@ class _HomeScreenState extends State<HomeScreen> {
                       motion: const ScrollMotion(),
                       children: [
                         SlidableAction(
-                          onPressed: (context) {
-                            _deleteBucketList(list);
+                          onPressed: (context) async {
+                            final shouldDelete = await showDialog<bool>(
+                              context: context,
+                              builder: (BuildContext context) {
+                                return AlertDialog(
+                                  title: const Text('Confirm Deletion'),
+                                  content: const Text('Are you sure you want to delete this bucket list?'),
+                                  actions: [
+                                    TextButton(
+                                      child: const Text('Cancel'),
+                                      onPressed: () {
+                                        Navigator.of(context).pop(false);
+                                      },
+                                    ),
+                                    TextButton(
+                                      child: const Text('Delete'),
+                                      onPressed: () {
+                                        Navigator.of(context).pop(true);
+                                      },
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+
+                            if (shouldDelete == true) {
+                              _deleteBucketList(list);
+                            }
                           },
                           backgroundColor: Colors.red,
                           foregroundColor: Colors.white,

@@ -149,12 +149,29 @@ class _BucketListScreenState extends State<BucketListScreen> {
 
   Future<void> _deleteBucketItem(int index) async {
     final itemDoc = bucketItems[index];
-
     final bucketListDocRef = FirebaseFirestore.instance
         .collection('bucket_lists')
         .doc(widget.bucketList.id);
 
     try {
+      // 0️⃣ Show loading dialog
+      showDialog(
+        barrierDismissible: false,
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            content: Row(
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 20),
+                const Text('Deleting...'),
+              ],
+            ),
+          );
+        },
+      );
+
       // 1️⃣ First: Delete all associated media files
       List<dynamic> mediaUrls = itemDoc['mediaUrls'] ?? [];
       for (String url in mediaUrls) {
@@ -174,7 +191,6 @@ class _BucketListScreenState extends State<BucketListScreen> {
 
       // 3️⃣ THEN delete the actual bucket item document
       await itemDoc.reference.delete();
-
       print('✅ Bucket item deleted');
 
       // 4️⃣ Refresh parent bucket list's reference array
@@ -189,8 +205,14 @@ class _BucketListScreenState extends State<BucketListScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to delete bucket item: $e')),
       );
+    } finally {
+      // 6️⃣ Always dismiss the loading dialog
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -280,8 +302,34 @@ class _BucketListScreenState extends State<BucketListScreen> {
                       motion: const ScrollMotion(),
                       children: [
                         SlidableAction(
-                          onPressed: (context) {
-                            _deleteBucketItem(index);
+                          onPressed: (context) async {
+                            final shouldDelete = await showDialog<bool>(
+                              context: context,
+                              builder: (BuildContext context) {
+                                return AlertDialog(
+                                  title: const Text('Confirm Deletion'),
+                                  content: const Text('Are you sure you want to delete this item?'),
+                                  actions: [
+                                    TextButton(
+                                      child: const Text('Cancel'),
+                                      onPressed: () {
+                                        Navigator.of(context).pop(false); // Don't delete
+                                      },
+                                    ),
+                                    TextButton(
+                                      child: const Text('Delete'),
+                                      onPressed: () {
+                                        Navigator.of(context).pop(true); // Confirm deletion
+                                      },
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+
+                            if (shouldDelete == true) {
+                              _deleteBucketItem(index);
+                            }
                           },
                           backgroundColor: Colors.red,
                           foregroundColor: Colors.white,
