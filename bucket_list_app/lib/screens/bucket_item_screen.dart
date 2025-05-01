@@ -2,7 +2,14 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import '../models/bucket_item.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:image_pickers/image_pickers.dart';
+import 'dart:io';
+import '../widgets/video_player_widget.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
+import 'dart:typed_data'; // for Uint8List
+
+
 
 class BucketItemScreen extends StatefulWidget {
   final BucketItem bucketItem;
@@ -22,7 +29,7 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
 
   TextEditingController _descriptionController = TextEditingController();
 
-  final ImagePicker picker = ImagePicker();
+  //final FilePicker picker = FilePicker();
   late PageController _pageController;
   int _currentPage = 0;
 
@@ -46,52 +53,37 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
   }
 
   
-  Future<void> addPicture() async {
+  Future<void> addMedia() async {
+    // 🔐 1. Request permissions
+    final imageStatus = await Permission.photos.request();
+    final videoStatus = await Permission.videos.request();
+    final cameraStatus = await Permission.camera.request();
+
+    print("🔍 Images: $imageStatus");
+    print("🔍 Videos: $videoStatus");
+    print("🔍 Camera: $cameraStatus");
+
+    if (!imageStatus.isGranted || !videoStatus.isGranted || !cameraStatus.isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Permissions required to access media.')),
+      );
+      return;
+    }
+
     try {
-      // Ask user to choose photo source
-      final ImageSource? source = await showModalBottomSheet<ImageSource>(
-        context: context,
-        builder: (context) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Take a photo'),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Choose from gallery'),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
-            ),
-          ],
-        ),
+      // 📸 2. Open picker with image_pickers
+      final List<Media>? picked = await ImagePickers.pickerPaths(
+        galleryMode: GalleryMode.all, // images + videos
+        selectCount: 10,
+        showGif: false,
+        showCamera: true,
+        compressSize: 500, // optional compression under 500 KB
       );
 
-      if (source == null) {
-        print("🟡 User canceled image source selection.");
+      if (picked == null || picked.isEmpty) {
+        print("🟡 No media selected.");
         return;
       }
-
-      print("🟡 User selected source: $source");
-
-      List<XFile> pickedFiles = [];
-
-      if (source == ImageSource.gallery) {
-        pickedFiles = await picker.pickMultiImage(imageQuality: 75) ?? [];
-      } else if (source == ImageSource.camera) {
-        final XFile? pickedFile = await picker.pickImage(source: ImageSource.camera, imageQuality: 75);
-        if (pickedFile != null) {
-          pickedFiles = [pickedFile];
-        }
-      }
-
-      if (pickedFiles.isEmpty) {
-        print("🟡 No file selected.");
-        return;
-      }
-
-      print("🟢 Number of images selected: ${pickedFiles.length}");
 
       final itemRef = FirebaseFirestore.instance
           .collection('bucket_items')
@@ -99,52 +91,51 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
 
       List<String> newDownloadUrls = [];
 
-      const int maxSizeInBytes = 5 * 1024 * 1024; // 5 * 1024 * 1024 = 5 MB limit
+      // 🚀 3. Loop through selected media
+      for (final media in picked) {
+        final path = media.path;
+        if (path == null || path.isEmpty) continue;
 
-      for (var pickedFile in pickedFiles) {
-        final int fileSize = await pickedFile.length();
+        final file = File(path);
+        final int fileSize = await file.length();
 
-        if (fileSize > maxSizeInBytes) {
-          print("❌ Skipping ${pickedFile.name} — too large: ${fileSize / (1024 * 1024)} MB");
-
+        if (fileSize > 25 * 1024 * 1024) {
+          final name = path.split('/').last;
+          print("🚫 $name is too large.");
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '${pickedFile.name} is too large (limit is 5 MB)',
-                style: const TextStyle(fontSize: 14),
-              ),
-            ),
+            SnackBar(content: Text('$name is over 25MB and was skipped')),
           );
-          continue; // Skip this file
+          continue;
         }
 
-        final fileName = DateTime.now().millisecondsSinceEpoch.toString() + "_" + pickedFile.name;
+        final fileName = DateTime.now().millisecondsSinceEpoch.toString() +
+            "_" +
+            path.split('/').last;
+
         final storageRef = FirebaseStorage.instance
             .ref()
-            .child('bucket_item_images')
+            .child('bucket_item_media')
             .child(widget.bucketItem.id)
             .child(fileName);
 
         try {
-          print("🟡 Uploading ${pickedFile.name}...");
-          await storageRef.putData(await pickedFile.readAsBytes());
-          print("✅ Upload complete. Getting download URL...");
+          print("📤 Uploading $fileName...");
+          await storageRef.putFile(file);
           final downloadUrl = await storageRef.getDownloadURL();
           newDownloadUrls.add(downloadUrl);
-        } catch (uploadError) {
-          print("❌ Upload error for ${pickedFile.name}: $uploadError");
+        } catch (e) {
+          print("❌ Upload error for $fileName: $e");
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Upload failed: $uploadError')),
+            SnackBar(content: Text('Failed to upload $fileName')),
           );
         }
       }
 
+      // 🔄 4. Save URLs to Firestore
       if (newDownloadUrls.isNotEmpty) {
         await itemRef.update({
           'mediaUrls': FieldValue.arrayUnion(newDownloadUrls),
         });
-
-        print("✅ Firestore updated with new images.");
 
         setState(() {
           widget.bucketItem.mediaUrls.addAll(newDownloadUrls);
@@ -153,14 +144,60 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
         widget.onUpdate();
       }
     } catch (e) {
-      print("❌ Error during image upload: $e");
+      print("❌ Error in addMedia(): $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed: $e')),
+        SnackBar(content: Text('Media selection failed: $e')),
       );
     }
   }
 
 
+
+
+  bool isVideo(String url) {
+    final path = Uri.parse(url).path.toLowerCase();
+    return path.endsWith('.mp4') || path.contains('.mp4');
+  }
+
+
+  Future<Uint8List?> getVideoThumbnail(String videoUrl) async {
+    try {
+      return await VideoThumbnail.thumbnailData(
+        video: videoUrl,
+        imageFormat: ImageFormat.JPEG,
+        maxWidth: 300,
+        quality: 75,
+      );
+    } catch (e) {
+      print('❌ Failed to generate thumbnail: $e');
+      return null;
+    }
+  }
+
+
+  Map<String, Uint8List> _videoThumbnailCache = {};
+
+  Future<Uint8List?> _getCachedVideoThumbnail(String url) async {
+    if (_videoThumbnailCache.containsKey(url)) {
+      return _videoThumbnailCache[url];
+    }
+
+    try {
+      final uint8list = await VideoThumbnail.thumbnailData(
+        video: url,
+        imageFormat: ImageFormat.JPEG,
+        maxWidth: 128,
+        quality: 75,
+      );
+      if (uint8list != null) {
+        _videoThumbnailCache[url] = uint8list;
+      }
+      return uint8list;
+    } catch (e) {
+      print("❌ Error generating thumbnail for $url: $e");
+      return null;
+    }
+  }
 
 
   List<Widget> carousel() {
@@ -169,7 +206,7 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
         child: SizedBox(
           height: 320,
           child: PageView.builder(
-            controller: _pageController,
+            controller: _pageController, // assumes viewportFraction = 0.85 in initState()
             itemCount: widget.bucketItem.mediaUrls.length,
             onPageChanged: (index) {
               setState(() {
@@ -177,8 +214,8 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
               });
             },
             itemBuilder: (context, index) {
-              final imageUrl = widget.bucketItem.mediaUrls[index];
-              final isActive = index == _currentPage;
+              final mediaUrl = widget.bucketItem.mediaUrls[index];
+              final isVideoFile = isVideo(mediaUrl);
 
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -190,19 +227,64 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: Image.network(
-                      imageUrl,
-                      fit: BoxFit.contain,
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return const Center(child: CircularProgressIndicator());
-                      },
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Center(
-                          child: Text('Image failed to load', style: TextStyle(color: Colors.white)),
-                        );
-                      },
-                    ),
+                    child: isVideoFile
+                        ? GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => VideoPlayerWidget(videoUrl: mediaUrl),
+                                ),
+                              );
+                            },
+                            child: FutureBuilder<Uint8List?>(
+                              future: _getCachedVideoThumbnail(mediaUrl),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState == ConnectionState.waiting) {
+                                  return const Center(child: CircularProgressIndicator());
+                                } else if (snapshot.hasData) {
+                                  return Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      Image.memory(
+                                        snapshot.data!,
+                                        fit: BoxFit.cover,
+                                        width: double.infinity,
+                                        height: double.infinity,
+                                      ),
+                                      const Icon(
+                                        Icons.play_circle_fill,
+                                        size: 64,
+                                        color: Colors.white,
+                                      ),
+                                    ],
+                                  );
+                                } else {
+                                  return Container(
+                                    color: Colors.black26,
+                                    child: const Center(
+                                      child: Icon(Icons.play_circle_fill,
+                                          size: 64, color: Colors.white),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          )
+                        : Image.network(
+                            mediaUrl,
+                            fit: BoxFit.contain,
+                            loadingBuilder: (context, child, progress) {
+                              if (progress == null) return child;
+                              return const Center(child: CircularProgressIndicator());
+                            },
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Center(
+                                child: Text('Image failed to load',
+                                    style: TextStyle(color: Colors.white)),
+                              );
+                            },
+                          ),
                   ),
                 ),
               );
@@ -229,6 +311,11 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
       ),
     ];
   }
+
+
+
+
+
 
 
   //saving the description function
@@ -306,7 +393,7 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
               Align(
                 alignment: Alignment.center,
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 20.0),
+                  padding: const EdgeInsets.only(top: 40.0),
                   child: Text(
                     widget.bucketItem.itemName,
                     textAlign: TextAlign.center,
@@ -379,7 +466,7 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
           
               //Button for adding pictures to users mediaUrls list
               GestureDetector(
-                onTap: addPicture,
+                onTap: addMedia,
                 child: Padding(
                   padding: const EdgeInsets.all(8.0),
                   child: Container(
@@ -389,7 +476,7 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
                       borderRadius: BorderRadius.circular(12)
                     ),
                     child: Text(
-                      'Add Photos',
+                      'Add Photos and Videos',
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,

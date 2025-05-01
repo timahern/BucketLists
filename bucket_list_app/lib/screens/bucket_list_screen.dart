@@ -236,20 +236,23 @@ class _BucketListScreenState extends State<BucketListScreen> {
                     padding: const EdgeInsets.only(top: 20),
                     child: Column(
                       children: [
-                        Text(
-                          widget.bucketList.title,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black38,
-                                offset: Offset(2, 2),
-                                blurRadius: 4,
-                              ),
-                            ],
+                        Padding(
+                          padding: const EdgeInsets.all(15.0),
+                          child: Text(
+                            widget.bucketList.title,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.black38,
+                                  offset: Offset(2, 2),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                         const SizedBox(height: 8),

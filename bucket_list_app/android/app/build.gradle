@@ -9,7 +9,10 @@ plugins {
 //ext.kotlin_version = '2.1.10'  // Or the latest stable version
 
 android {
-    namespace = "com.example.bucket_list_app"
+
+    namespace "com.example.bucket_list_app"
+
+    //namespace = "com.example.bucket_list_app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
