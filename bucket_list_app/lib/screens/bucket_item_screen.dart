@@ -389,12 +389,28 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
         .collection('bucket_items')
         .doc(widget.bucketItem.id);
 
+    // 1. Show progress dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text("Deleting..."),
+          ],
+        ),
+      ),
+    );
+
     List<String> successfullyDeleted = [];
 
+    // 2. Delete from Firebase Storage
     for (String url in urlsToDelete) {
       try {
         final ref = FirebaseStorage.instance.refFromURL(url);
-        await ref.delete(); // 🔥 Delete from Firebase Storage
+        await ref.delete();
         successfullyDeleted.add(url);
         print('✅ Deleted: $url');
       } catch (e) {
@@ -405,6 +421,7 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
       }
     }
 
+    // 3. Update Firestore
     if (successfullyDeleted.isNotEmpty) {
       try {
         await itemRef.update({
@@ -412,13 +429,11 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
         });
 
         setState(() {
-          widget.bucketItem.mediaUrls.removeWhere((url) => successfullyDeleted.contains(url));
+          widget.bucketItem.mediaUrls
+              .removeWhere((url) => successfullyDeleted.contains(url));
         });
 
         widget.onUpdate();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('✅ Deleted ${successfullyDeleted.length} items')),
-        );
       } catch (e) {
         print('❌ Failed to update Firestore: $e');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -426,7 +441,19 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
         );
       }
     }
+
+    // 4. Dismiss progress dialog
+    Navigator.of(context, rootNavigator: true).pop();
+
+    // 5. Show result message
+    if (successfullyDeleted.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('✅ Deleted ${successfullyDeleted.length} item(s)')),
+      );
+    }
   }
+
+
 
 
   void _navigateToManageMedia() async {

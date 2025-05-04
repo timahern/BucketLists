@@ -58,10 +58,46 @@ class _ManageMediaScreenState extends State<ManageMediaScreen> {
     });
   }
 
-  void deleteSelected() {
-    widget.onDelete(selectedUrls.toList());
-    Navigator.pop(context);
+  void deleteSelected() async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Confirm Deletion"),
+        content: Text("Are you sure you want to delete ${selectedUrls.length} item(s)?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDelete == true) {
+      print("🗑️ Deleting ${selectedUrls.length} item(s)...");
+      widget.onDelete(selectedUrls.toList()); // still handled by BucketItemScreen
+      Navigator.pop(context);
+    } else {
+      print("❌ Deletion canceled by user.");
+    }
   }
+
+
+  void selectAllOrNone() {
+    setState(() {
+      if (selectedUrls.length == widget.mediaUrls.length) {
+        selectedUrls.clear(); // unselect all
+      } else {
+        selectedUrls = widget.mediaUrls.toSet(); // select all
+      }
+    });
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -69,10 +105,33 @@ class _ManageMediaScreenState extends State<ManageMediaScreen> {
       appBar: AppBar(
         title: const Text("Manage Media"),
         actions: [
+          Center(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  if (selectedUrls.length == widget.mediaUrls.length) {
+                    selectedUrls.clear();
+                  } else {
+                    selectedUrls = widget.mediaUrls.toSet();
+                  }
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  selectedUrls.length == widget.mediaUrls.length ? 'Unselect All' : 'Select All',
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.delete),
             onPressed: selectedUrls.isEmpty ? null : deleteSelected,
-          )
+          ),
         ],
       ),
       body: GridView.builder(
@@ -101,6 +160,7 @@ class _ManageMediaScreenState extends State<ManageMediaScreen> {
 
           return GestureDetector(
             onTap: () => toggleSelection(url),
+            //onLongPress: () => toggleSelection(url),
             child: Stack(
               children: [
                 thumbnailWidget,
