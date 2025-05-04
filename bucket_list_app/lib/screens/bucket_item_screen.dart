@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_pickers/image_pickers.dart';
 import 'dart:io';
 import '../widgets/video_player_widget.dart';
+import '../widgets/full_screen_image_view.dart';
+import 'package:bucket_list_app/screens/media_management_screen.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'dart:typed_data'; // for Uint8List
@@ -271,7 +273,16 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
                               },
                             ),
                           )
-                        : Image.network(
+                        : GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => FullScreenImageView(imageUrl: mediaUrl),
+                              ),
+                            );
+                          },
+                          child: Image.network(
                             mediaUrl,
                             fit: BoxFit.contain,
                             loadingBuilder: (context, child, progress) {
@@ -285,6 +296,7 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
                               );
                             },
                           ),
+                      ),
                   ),
                 ),
               );
@@ -371,6 +383,63 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
     }
   }
 
+
+  Future<void> deleteMedia(List<String> urlsToDelete) async {
+    final itemRef = FirebaseFirestore.instance
+        .collection('bucket_items')
+        .doc(widget.bucketItem.id);
+
+    List<String> successfullyDeleted = [];
+
+    for (String url in urlsToDelete) {
+      try {
+        final ref = FirebaseStorage.instance.refFromURL(url);
+        await ref.delete(); // 🔥 Delete from Firebase Storage
+        successfullyDeleted.add(url);
+        print('✅ Deleted: $url');
+      } catch (e) {
+        print('❌ Failed to delete $url: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete: $url')),
+        );
+      }
+    }
+
+    if (successfullyDeleted.isNotEmpty) {
+      try {
+        await itemRef.update({
+          'mediaUrls': FieldValue.arrayRemove(successfullyDeleted),
+        });
+
+        setState(() {
+          widget.bucketItem.mediaUrls.removeWhere((url) => successfullyDeleted.contains(url));
+        });
+
+        widget.onUpdate();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ Deleted ${successfullyDeleted.length} items')),
+        );
+      } catch (e) {
+        print('❌ Failed to update Firestore: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update Firestore')),
+        );
+      }
+    }
+  }
+
+
+  void _navigateToManageMedia() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ManageMediaScreen(
+          mediaUrls: widget.bucketItem.mediaUrls,
+          onDelete: deleteMedia,
+        ),
+      ),
+    );
+  }
 
 
 
@@ -464,28 +533,57 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
               
               
           
-              //Button for adding pictures to users mediaUrls list
-              GestureDetector(
-                onTap: addMedia,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Container(
-                    padding: EdgeInsets.all(15),
-                    decoration: BoxDecoration(
-                      color: Colors.deepPurple,
-                      borderRadius: BorderRadius.circular(12)
-                    ),
-                    child: Text(
-                      'Add Photos and Videos',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
+              //Button for adding pictures to users mediaUrls list and button for managing media
+              Padding(
+                padding: const EdgeInsets.only(top: 15.0),
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      GestureDetector(
+                        onTap: addMedia,
+                        child: Container(
+                          padding: EdgeInsets.all(15),
+                          decoration: BoxDecoration(
+                            color: Colors.deepPurple,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'Add Photos and Videos',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 12), // Space between buttons
+                      GestureDetector(
+                        onTap: _navigateToManageMedia,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text(
+                            'Manage\nMedia',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
+
               
               //Description box for the bucket item (might be moved above the photos later)
           
