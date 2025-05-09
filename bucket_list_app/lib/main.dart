@@ -2,18 +2,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'screens/splash_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 void main() async{
 
   WidgetsFlutterBinding.ensureInitialized();
   if(kIsWeb){
-    await Firebase.initializeApp(options: const FirebaseOptions(
-      apiKey: "AIzaSyAsmdvDpPIOKkm06jJwOUWtzEWDkp2el3Y",
-      authDomain: "bucketapp-ecc03.firebaseapp.com",
-      projectId: "bucketapp-ecc03",
-      storageBucket: "bucketapp-ecc03.firebasestorage.app",
-      messagingSenderId: "273351697779",
-      appId: "1:273351697779:web:a49a7888097211d27a9106"));
+    await Firebase.initializeApp(options: FirebaseOptions(
+      apiKey: dotenv.env['apiKey']!,
+      authDomain: dotenv.env['authDomain']!,
+      projectId: dotenv.env['projectId']!,
+      storageBucket: dotenv.env['storageBucket']!,
+      messagingSenderId: dotenv.env['messagingSenderId']!,
+      appId: dotenv.env['appId']!));
   }else{
     await Firebase.initializeApp();
   }

@@ -4,7 +4,8 @@ import '../models/bucket_list.dart';
 import '../models/bucket_item.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart'; // <-- Make sure this is imported at the top
+import 'package:firebase_storage/firebase_storage.dart';
+import '../widgets/bucket_item_card.dart';
 
 
 
@@ -341,26 +342,14 @@ class _BucketListScreenState extends State<BucketListScreen> {
                         ),
                       ],
                     ),
-                    child: CheckboxListTile(
-                      title: Text(
-                        item['itemName'],
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                          letterSpacing: .5,
-                        ),
-                      ),
-                      value: item['completed'],
-                      
-                      //onChanged: (_) => Navigator.push(
-                      //  context,
-                      //  MaterialPageRoute(
-                      //    builder: (context) => BucketItemScreen(bucketItem: BucketItem.fromFirestore(item), onUpdate: widget.onUpdate),
-                      //  ),
-                      //),
-
-                      onChanged: (_) async {
+                    child: BucketItemCard(
+                      title: item['itemName'],
+                      //passing images to build the bucket item card. This will have to be reworked
+                      imageUrl: (item['mediaUrls'] != null && item['mediaUrls'].isNotEmpty)
+                        ? item['mediaUrls'][0]
+                        : null,
+                      completed: item['completed'],
+                      onTap: () async {
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -370,12 +359,10 @@ class _BucketListScreenState extends State<BucketListScreen> {
                             ),
                           ),
                         );
-                        await _loadBucketItems(); // <-- Reload after coming back!
+                        await _loadBucketItems();
                       },
-
-                      //send user to the bucket item screen
-                      //onTap: () => 
                     ),
+
                   );
                 },
               ),

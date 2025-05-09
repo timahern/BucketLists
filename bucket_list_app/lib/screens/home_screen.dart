@@ -10,7 +10,9 @@ import 'package:firebase_storage/firebase_storage.dart';
 
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final User? mockUser; // for testing purposes
+
+  const HomeScreen({super.key, this.mockUser});
 
   @override
   _HomeScreenState createState() => _HomeScreenState();
@@ -18,12 +20,18 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   List<BucketList> bucketLists = [];
-  final user = FirebaseAuth.instance.currentUser!;
+  late final User user;
 
   @override
   void initState() {
     super.initState();
-    _loadBucketLists();
+
+    // Use injected mockUser in tests, or FirebaseAuth in real app
+    user = widget.mockUser ?? FirebaseAuth.instance.currentUser!;
+
+    if (widget.mockUser == null || !user.uid.startsWith('test')) {
+      _loadBucketLists();
+    }
   }
 
   // Load bucket lists from Firestore
@@ -64,11 +72,31 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
 
+  bool get isInTestMode {
+    var inTest = false;
+    assert(() {
+      inTest = true;
+      return true;
+    }());
+    return inTest;
+  }
+
 
   // Add new bucket list to Firestore
   void _addBucketList() {
     final controller = TextEditingController();
-    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (!isInTestMode && FirebaseAuth.instance.currentUser == null) {
+      showDialog(
+        context: context,
+        builder: (context) => const AlertDialog(
+          title: Text('New Bucket List'),
+          content: Text('You must be signed in to add a list.'),
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -80,24 +108,31 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           TextButton(
             onPressed: () async {
-              if (controller.text.trim().isEmpty) return; // Prevent empty names
+              if (controller.text.trim().isEmpty) return;
 
-              // Create a new bucket list in Firestore with an empty 'items' array
-              final docRef = await FirebaseFirestore.instance.collection('bucket_lists').add({
-                'title': controller.text.trim(),
-                'items': [],
-                'userId': currentUser?.uid,  // Initialize with an empty list of references
-              });
+              if (!isInTestMode) {
+                final currentUser = FirebaseAuth.instance.currentUser;
 
-              _loadBucketLists(); // Reload lists after adding
+                await FirebaseFirestore.instance.collection('bucket_lists').add({
+                  'title': controller.text.trim(),
+                  'items': [],
+                  'userId': currentUser?.uid,
+                });
+
+                _loadBucketLists();
+              }
+
               Navigator.of(context).pop();
             },
             child: const Text('Add'),
-          )
+          ),
         ],
       ),
     );
   }
+
+
+
 
 
   // Edit bucket list name
