@@ -7,6 +7,7 @@ import 'bucket_list_screen.dart';
 import '../models/bucket_list.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 
 class HomeScreen extends StatefulWidget {
@@ -284,18 +285,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: Column(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    const Text(
+                    Text(
                       'My Bucket Lists',
-                      style: TextStyle(
+                      style: GoogleFonts.roboto(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                         shadows: [
-                          Shadow(
-                            color: Colors.black38,
-                            offset: Offset(2, 2),
-                            blurRadius: 4,
-                          )
+                          //Shadow(
+                          //  color: Colors.black38,
+                          //  offset: Offset(2, 2),
+                          //  blurRadius: 4,
+                          ///)
                         ],
                       ),
                     ),

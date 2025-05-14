@@ -102,6 +102,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 //Hello again!
                 Text(
                   'Hello Again!',
+                  key: const Key('hello-again-text'),
                   style: GoogleFonts.bebasNeue(
                     fontSize: 52
                   ),

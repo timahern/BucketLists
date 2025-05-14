@@ -1,5 +1,6 @@
 import 'package:bucket_list_app/screens/bucket_item_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../models/bucket_list.dart';
 import '../models/bucket_item.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -242,16 +243,16 @@ class _BucketListScreenState extends State<BucketListScreen> {
                           child: Text(
                             widget.bucketList.title,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
+                            style: GoogleFonts.roboto(
                               fontSize: 32,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
                               shadows: [
-                                Shadow(
-                                  color: Colors.black38,
-                                  offset: Offset(2, 2),
-                                  blurRadius: 4,
-                                ),
+                                //Shadow(
+                                //  color: Colors.black38,
+                                //  offset: Offset(2, 2),
+                                //  blurRadius: 4,
+                                //),
                               ],
                             ),
                           ),
