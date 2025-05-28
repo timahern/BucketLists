@@ -174,15 +174,36 @@ class _BucketListScreenState extends State<BucketListScreen> {
         },
       );
 
-      // 1️⃣ First: Delete all associated media files
+      // 1️⃣ Delete all associated media files
       List<dynamic> mediaUrls = itemDoc['mediaUrls'] ?? [];
+      Map<String, dynamic> videoThumbnailsRaw = itemDoc['videoThumbnails'] ?? {};
+      Map<String, String> videoThumbnails = videoThumbnailsRaw.map(
+        (key, value) => MapEntry(key.toString(), value.toString()),
+      );
+
       for (String url in mediaUrls) {
         try {
+          // Delete the media file
           final ref = FirebaseStorage.instance.refFromURL(url);
           await ref.delete();
           print('✅ Deleted media: $url');
         } catch (e) {
           print('❌ Failed to delete media: $url, error: $e');
+        }
+
+        // Delete associated video thumbnail, if it's a video
+        if (url.toLowerCase().contains('.mp4') && videoThumbnails.containsKey(url)) {
+          final thumbUrl = videoThumbnails[url];
+          if (thumbUrl != null) {
+            try {
+              print('🔍 Attempting to delete thumbnail: $thumbUrl');
+              final thumbRef = FirebaseStorage.instance.refFromURL(thumbUrl);
+              await thumbRef.delete();
+              print('✅ Deleted thumbnail: $thumbUrl');
+            } catch (e) {
+              print('❌ Failed to delete thumbnail: $thumbUrl, error: $e');
+            }
+          }
         }
       }
 
@@ -191,7 +212,7 @@ class _BucketListScreenState extends State<BucketListScreen> {
         'items': FieldValue.arrayRemove([itemDoc.reference])
       });
 
-      // 3️⃣ THEN delete the actual bucket item document
+      // 3️⃣ Delete the actual bucket item document
       await itemDoc.reference.delete();
       print('✅ Bucket item deleted');
 
@@ -214,6 +235,8 @@ class _BucketListScreenState extends State<BucketListScreen> {
       }
     }
   }
+
+
 
 
   @override
@@ -350,6 +373,9 @@ class _BucketListScreenState extends State<BucketListScreen> {
                         ? item['mediaUrls'][0]
                         : null,
                       completed: item['completed'],
+                      videoThumbnails: item['videoThumbnails'] != null
+                        ? Map<String, String>.from(item['videoThumbnails'] as Map)
+                        : {},
                       onTap: () async {
                         await Navigator.push(
                           context,

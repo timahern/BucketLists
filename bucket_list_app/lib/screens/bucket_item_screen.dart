@@ -54,16 +54,16 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
     super.dispose();
   }
 
-  
+  bool isVideo(String url) {
+    final path = Uri.parse(url).path.toLowerCase();
+    return path.endsWith('.mp4') || path.contains('.mp4');
+  }
+
+
   Future<void> addMedia() async {
-    // 🔐 1. Request permissions
     final imageStatus = await Permission.photos.request();
     final videoStatus = await Permission.videos.request();
     final cameraStatus = await Permission.camera.request();
-
-    print("🔍 Images: $imageStatus");
-    print("🔍 Videos: $videoStatus");
-    print("🔍 Camera: $cameraStatus");
 
     if (!imageStatus.isGranted || !videoStatus.isGranted || !cameraStatus.isGranted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -73,27 +73,23 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
     }
 
     try {
-      // 📸 2. Open picker with image_pickers
       final List<Media>? picked = await ImagePickers.pickerPaths(
-        galleryMode: GalleryMode.all, // images + videos
+        galleryMode: GalleryMode.all,
         selectCount: 10,
         showGif: false,
         showCamera: true,
-        compressSize: 500, // optional compression under 500 KB
+        compressSize: 500,
       );
 
-      if (picked == null || picked.isEmpty) {
-        print("🟡 No media selected.");
-        return;
-      }
+      if (picked == null || picked.isEmpty) return;
 
       final itemRef = FirebaseFirestore.instance
           .collection('bucket_items')
           .doc(widget.bucketItem.id);
 
       List<String> newDownloadUrls = [];
+      Map<String, String> newVideoThumbMap = {};
 
-      // 🚀 3. Loop through selected media
       for (final media in picked) {
         final path = media.path;
         if (path == null || path.isEmpty) continue;
@@ -103,28 +99,44 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
 
         if (fileSize > 25 * 1024 * 1024) {
           final name = path.split('/').last;
-          print("🚫 $name is too large.");
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('$name is over 25MB and was skipped')),
           );
           continue;
         }
 
-        final fileName = DateTime.now().millisecondsSinceEpoch.toString() +
-            "_" +
-            path.split('/').last;
-
-        final storageRef = FirebaseStorage.instance
+        final fileName = DateTime.now().millisecondsSinceEpoch.toString() + "_" + path.split('/').last;
+        final mediaRef = FirebaseStorage.instance
             .ref()
             .child('bucket_item_media')
             .child(widget.bucketItem.id)
             .child(fileName);
 
         try {
-          print("📤 Uploading $fileName...");
-          await storageRef.putFile(file);
-          final downloadUrl = await storageRef.getDownloadURL();
+          await mediaRef.putFile(file);
+          final downloadUrl = await mediaRef.getDownloadURL();
           newDownloadUrls.add(downloadUrl);
+
+          if (isVideo(downloadUrl)) {
+            final thumbData = await VideoThumbnail.thumbnailData(
+              video: downloadUrl,
+              imageFormat: ImageFormat.JPEG,
+              maxWidth: 300,
+              quality: 75,
+            );
+
+            if (thumbData != null) {
+              final thumbRef = FirebaseStorage.instance
+                  .ref()
+                  .child('bucket_item_media')
+                  .child(widget.bucketItem.id)
+                  .child('thumb_${fileName}.jpg');
+
+              await thumbRef.putData(thumbData);
+              final thumbUrl = await thumbRef.getDownloadURL();
+              newVideoThumbMap[downloadUrl] = thumbUrl;
+            }
+          }
         } catch (e) {
           print("❌ Upload error for $fileName: $e");
           ScaffoldMessenger.of(context).showSnackBar(
@@ -133,14 +145,16 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
         }
       }
 
-      // 🔄 4. Save URLs to Firestore
       if (newDownloadUrls.isNotEmpty) {
         await itemRef.update({
           'mediaUrls': FieldValue.arrayUnion(newDownloadUrls),
+          if (newVideoThumbMap.isNotEmpty)
+            'videoThumbnails': widget.bucketItem.videoThumbnails..addAll(newVideoThumbMap),
         });
 
         setState(() {
           widget.bucketItem.mediaUrls.addAll(newDownloadUrls);
+          widget.bucketItem.videoThumbnails.addAll(newVideoThumbMap);
         });
 
         widget.onUpdate();
@@ -156,10 +170,8 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
 
 
 
-  bool isVideo(String url) {
-    final path = Uri.parse(url).path.toLowerCase();
-    return path.endsWith('.mp4') || path.contains('.mp4');
-  }
+
+  
 
 
   Future<Uint8List?> getVideoThumbnail(String videoUrl) async {
@@ -208,7 +220,7 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
         child: SizedBox(
           height: 320,
           child: PageView.builder(
-            controller: _pageController, // assumes viewportFraction = 0.85 in initState()
+            controller: _pageController,
             itemCount: widget.bucketItem.mediaUrls.length,
             onPageChanged: (index) {
               setState(() {
@@ -239,64 +251,51 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
                                 ),
                               );
                             },
-                            child: FutureBuilder<Uint8List?>(
-                              future: _getCachedVideoThumbnail(mediaUrl),
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState == ConnectionState.waiting) {
-                                  return const Center(child: CircularProgressIndicator());
-                                } else if (snapshot.hasData) {
-                                  return Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      Image.memory(
-                                        snapshot.data!,
-                                        fit: BoxFit.cover,
-                                        width: double.infinity,
-                                        height: double.infinity,
-                                      ),
-                                      const Icon(
-                                        Icons.play_circle_fill,
-                                        size: 64,
-                                        color: Colors.white,
-                                      ),
-                                    ],
-                                  );
-                                } else {
-                                  return Container(
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Image.network(
+                                  widget.bucketItem.videoThumbnails[mediaUrl] ?? '',
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
                                     color: Colors.black26,
                                     child: const Center(
                                       child: Icon(Icons.play_circle_fill,
                                           size: 64, color: Colors.white),
                                     ),
-                                  );
-                                }
-                              },
+                                  ),
+                                ),
+                                const Icon(Icons.play_circle_fill,
+                                    size: 64, color: Colors.white),
+                              ],
                             ),
                           )
                         : GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => FullScreenImageView(imageUrl: mediaUrl),
-                              ),
-                            );
-                          },
-                          child: Image.network(
-                            mediaUrl,
-                            fit: BoxFit.contain,
-                            loadingBuilder: (context, child, progress) {
-                              if (progress == null) return child;
-                              return const Center(child: CircularProgressIndicator());
-                            },
-                            errorBuilder: (context, error, stackTrace) {
-                              return const Center(
-                                child: Text('Image failed to load',
-                                    style: TextStyle(color: Colors.white)),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => FullScreenImageView(imageUrl: mediaUrl),
+                                ),
                               );
                             },
+                            child: Image.network(
+                              mediaUrl,
+                              fit: BoxFit.contain,
+                              loadingBuilder: (context, child, progress) {
+                                if (progress == null) return child;
+                                return const Center(child: CircularProgressIndicator());
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Center(
+                                  child: Text('Image failed to load',
+                                      style: TextStyle(color: Colors.white)),
+                                );
+                              },
+                            ),
                           ),
-                      ),
                   ),
                 ),
               );
@@ -323,6 +322,7 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
       ),
     ];
   }
+
 
 
 
@@ -389,7 +389,6 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
         .collection('bucket_items')
         .doc(widget.bucketItem.id);
 
-    // 1. Show progress dialog
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -405,14 +404,30 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
     );
 
     List<String> successfullyDeleted = [];
+    Map<String, String> updatedVideoThumbnails = Map.from(widget.bucketItem.videoThumbnails);
 
-    // 2. Delete from Firebase Storage
     for (String url in urlsToDelete) {
       try {
+        // Delete media file from Firebase Storage
         final ref = FirebaseStorage.instance.refFromURL(url);
         await ref.delete();
         successfullyDeleted.add(url);
         print('✅ Deleted: $url');
+
+        // If it's a video and has a stored thumbnail, delete that too
+        if (isVideo(url) && widget.bucketItem.videoThumbnails.containsKey(url)) {
+          final thumbUrl = widget.bucketItem.videoThumbnails[url];
+          if (thumbUrl != null) {
+            try {
+              final thumbRef = FirebaseStorage.instance.refFromURL(thumbUrl);
+              await thumbRef.delete();
+              print('✅ Deleted thumbnail: $thumbUrl');
+            } catch (e) {
+              print('❌ Failed to delete thumbnail: $e');
+            }
+          }
+          updatedVideoThumbnails.remove(url);
+        }
       } catch (e) {
         print('❌ Failed to delete $url: $e');
         ScaffoldMessenger.of(context).showSnackBar(
@@ -421,16 +436,17 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
       }
     }
 
-    // 3. Update Firestore
     if (successfullyDeleted.isNotEmpty) {
       try {
         await itemRef.update({
           'mediaUrls': FieldValue.arrayRemove(successfullyDeleted),
+          'videoThumbnails': updatedVideoThumbnails,
         });
 
         setState(() {
           widget.bucketItem.mediaUrls
               .removeWhere((url) => successfullyDeleted.contains(url));
+          widget.bucketItem.videoThumbnails = updatedVideoThumbnails;
         });
 
         widget.onUpdate();
@@ -442,10 +458,8 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
       }
     }
 
-    // 4. Dismiss progress dialog
     Navigator.of(context, rootNavigator: true).pop();
 
-    // 5. Show result message
     if (successfullyDeleted.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('✅ Deleted ${successfullyDeleted.length} item(s)')),
@@ -456,12 +470,14 @@ class _BucketItemScreenState extends State<BucketItemScreen> {
 
 
 
+
   void _navigateToManageMedia() async {
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ManageMediaScreen(
           mediaUrls: widget.bucketItem.mediaUrls,
+          videoThumbnails: widget.bucketItem.videoThumbnails,
           onDelete: deleteMedia,
         ),
       ),

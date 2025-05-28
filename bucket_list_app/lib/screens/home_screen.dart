@@ -127,7 +127,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-
+  bool isVideo(String url) {
+    final path = Uri.parse(url).path.toLowerCase();
+    return path.endsWith('.mp4') || path.contains('.mp4');
+  }
 
   Future<List<String>> getPreviewMediaUrls(List<DocumentReference> itemRefs) async {
     List<String> previewUrls = [];
@@ -139,8 +142,23 @@ class _HomeScreenState extends State<HomeScreen> {
       if (data == null) continue;
 
       final mediaUrls = List<String>.from(data['mediaUrls'] ?? []);
+      final Map<String, dynamic> videoThumbsRaw = data['videoThumbnails'] ?? {};
+      final Map<String, String> videoThumbnails = videoThumbsRaw.map((key, value) => MapEntry(key.toString(), value.toString()));
+
       if (mediaUrls.isNotEmpty) {
-        previewUrls.add(mediaUrls.first);
+        final firstUrl = mediaUrls.first;
+
+        if (isVideo(firstUrl)) {
+          final thumbUrl = videoThumbnails[firstUrl];
+          if (thumbUrl != null) {
+            previewUrls.add(thumbUrl);
+          } else {
+            // fallback to the video itself if thumbnail is missing
+            previewUrls.add(firstUrl);
+          }
+        } else {
+          previewUrls.add(firstUrl);
+        }
       }
 
       if (previewUrls.length == 4) break;
@@ -148,6 +166,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return previewUrls;
   }
+
 
 
 
@@ -214,9 +233,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _deleteBucketList(BucketList list) async {
     final bucketListRef = FirebaseFirestore.instance.collection('bucket_lists').doc(list.id);
 
-    //BuildContext dialogContext;
     try {
-
       // 0️⃣ Show loading dialog
       showDialog(
         barrierDismissible: false,
@@ -235,16 +252,21 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       );
 
-
       // 1️⃣ Find all bucket items related to this list
       final itemsQuery = await FirebaseFirestore.instance
           .collection('bucket_items')
           .where('bucket_list_ref', isEqualTo: bucketListRef)
           .get();
 
-      // 2️⃣ For each bucket item, delete associated media
+      // 2️⃣ For each bucket item, delete associated media and thumbnails
       for (var doc in itemsQuery.docs) {
         List<dynamic> mediaUrls = doc['mediaUrls'] ?? [];
+
+        Map<String, dynamic> videoThumbnailsRaw = doc['videoThumbnails'] ?? {};
+        Map<String, String> videoThumbnails = videoThumbnailsRaw.map(
+          (key, value) => MapEntry(key.toString(), value.toString()),
+        );
+
         for (String url in mediaUrls) {
           try {
             final ref = FirebaseStorage.instance.refFromURL(url);
@@ -253,38 +275,53 @@ class _HomeScreenState extends State<HomeScreen> {
           } catch (e) {
             print('❌ Failed to delete media: $url, error: $e');
           }
+
+          // Delete thumbnail if this is a video
+          if (url.toLowerCase().contains('.mp4') && videoThumbnails.containsKey(url)) {
+            final thumbUrl = videoThumbnails[url];
+            if (thumbUrl != null) {
+              try {
+                final thumbRef = FirebaseStorage.instance.refFromURL(thumbUrl);
+                await thumbRef.delete();
+                print('✅ Deleted thumbnail: $thumbUrl');
+              } catch (e) {
+                print('❌ Failed to delete thumbnail: $thumbUrl, error: $e');
+              }
+            }
+          }
         }
 
-        // 3️⃣ After deleting media, delete the bucket item itself
+        // 3️⃣ Delete the bucket item document
         await doc.reference.delete();
         print('✅ Deleted bucket item: ${doc.id}');
       }
 
-      // 4️⃣ After all bucket items are deleted, delete the bucket list itself
+      // 4️⃣ Delete the bucket list itself
       await bucketListRef.delete();
       print('✅ Deleted bucket list: ${list.id}');
 
-      // 5️⃣ Refresh the home screen lists
+      // 5️⃣ Refresh home screen list
       await _loadBucketLists();
     } catch (e) {
       print('❌ Failed to fully delete bucket list: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to delete bucket list: $e')),
       );
-    }finally {
+    } finally {
       // 6️⃣ Dismiss the loading dialog
       Navigator.of(context, rootNavigator: true).pop();
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
         width: double.infinity,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.blue, Colors.purple],
+            colors: [Colors.deepPurple, Colors.blue.shade200],
             begin: Alignment.topRight,
             end: Alignment.bottomLeft,
           ),
@@ -341,22 +378,75 @@ class _HomeScreenState extends State<HomeScreen> {
                       builder: (context, snapshot) {
                         final mediaUrls = snapshot.data ?? [];
 
-                        return BucketListPreviewCard(
-                          title: list.title,
-                          mediaUrls: mediaUrls,
-                          completionRate: list.getCompletionRate(),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => BucketListScreen(
-                                bucketList: list,
-                                onUpdate: _loadBucketLists,
+                        return GestureDetector(
+                          onLongPress: () {
+                            showModalBottomSheet(
+                              context: context,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                              ),
+                              builder: (context) {
+                                return Wrap(
+                                  children: [
+                                    ListTile(
+                                      leading: Icon(Icons.edit),
+                                      title: Text('Edit'),
+                                      onTap: () {
+                                        Navigator.of(context).pop(); // close sheet
+                                        _editBucketList(list);
+                                      },
+                                    ),
+                                    ListTile(
+                                      leading: Icon(Icons.delete),
+                                      title: Text('Delete'),
+                                      onTap: () async {
+                                        Navigator.of(context).pop(); // close sheet
+                                        final confirmed = await showDialog<bool>(
+                                          context: context,
+                                          builder: (context) => AlertDialog(
+                                            title: const Text('Confirm Deletion'),
+                                            content: const Text('Are you sure you want to delete this bucket list?'),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () => Navigator.of(context).pop(false),
+                                                child: const Text('Cancel'),
+                                              ),
+                                              TextButton(
+                                                onPressed: () => Navigator.of(context).pop(true),
+                                                child: const Text('Delete'),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+
+                                        if (confirmed == true) {
+                                          _deleteBucketList(list);
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                          },
+                          child: BucketListPreviewCard(
+                            title: list.title,
+                            mediaUrls: mediaUrls,
+                            completionRate: list.getCompletionRate(),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => BucketListScreen(
+                                  bucketList: list,
+                                  onUpdate: _loadBucketLists,
+                                ),
                               ),
                             ),
                           ),
                         );
                       },
                     );
+
                   },
                   childCount: bucketLists.length,
                 ),

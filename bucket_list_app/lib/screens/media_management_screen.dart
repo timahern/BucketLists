@@ -1,14 +1,16 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:http/http.dart' as http;
 
 class ManageMediaScreen extends StatefulWidget {
   final List<String> mediaUrls;
+  final Map<String, String> videoThumbnails;
   final Function(List<String>) onDelete;
 
   const ManageMediaScreen({
     super.key,
     required this.mediaUrls,
+    required this.videoThumbnails,
     required this.onDelete,
   });
 
@@ -18,7 +20,7 @@ class ManageMediaScreen extends StatefulWidget {
 
 class _ManageMediaScreenState extends State<ManageMediaScreen> {
   Set<String> selectedUrls = {};
-  Map<String, Uint8List?> videoThumbnails = {};
+  Map<String, Uint8List?> _loadedThumbnails = {};
 
   @override
   void initState() {
@@ -31,18 +33,26 @@ class _ManageMediaScreenState extends State<ManageMediaScreen> {
   }
 
   Future<void> _generateThumbnails() async {
-    for (String url in widget.mediaUrls) {
-      if (isVideo(url)) {
-        final uint8list = await VideoThumbnail.thumbnailData(
-          video: url,
-          imageFormat: ImageFormat.JPEG,
-          maxWidth: 128,
-          quality: 75,
-        );
-        if (mounted) {
-          setState(() {
-            videoThumbnails[url] = uint8list;
-          });
+    for (String videoUrl in widget.mediaUrls) {
+      if (isVideo(videoUrl)) {
+        final thumbUrl = widget.videoThumbnails[videoUrl];
+        if (thumbUrl != null && thumbUrl.isNotEmpty) {
+          try {
+            final response = await http.get(Uri.parse(thumbUrl));
+            if (response.statusCode == 200) {
+              if (mounted) {
+                setState(() {
+                  _loadedThumbnails[videoUrl] = response.bodyBytes;
+                });
+              }
+            } else {
+              print("⚠️ Failed to load thumbnail from $thumbUrl (status: ${response.statusCode})");
+            }
+          } catch (e) {
+            print("❌ Error fetching thumbnail for $videoUrl: $e");
+          }
+        } else {
+          print("⚠️ No thumbnail URL found for video: $videoUrl");
         }
       }
     }
@@ -87,7 +97,6 @@ class _ManageMediaScreenState extends State<ManageMediaScreen> {
     }
   }
 
-
   void selectAllOrNone() {
     setState(() {
       if (selectedUrls.length == widget.mediaUrls.length) {
@@ -97,7 +106,6 @@ class _ManageMediaScreenState extends State<ManageMediaScreen> {
       }
     });
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +158,7 @@ class _ManageMediaScreenState extends State<ManageMediaScreen> {
           Widget thumbnailWidget;
 
           if (isVideoFile) {
-            final thumbnail = videoThumbnails[url];
+            final thumbnail = _loadedThumbnails[url];
             thumbnailWidget = thumbnail != null
                 ? Image.memory(thumbnail, fit: BoxFit.cover, width: double.infinity)
                 : Container(color: Colors.black12);
@@ -160,7 +168,6 @@ class _ManageMediaScreenState extends State<ManageMediaScreen> {
 
           return GestureDetector(
             onTap: () => toggleSelection(url),
-            //onLongPress: () => toggleSelection(url),
             child: Stack(
               children: [
                 thumbnailWidget,
@@ -168,7 +175,7 @@ class _ManageMediaScreenState extends State<ManageMediaScreen> {
                   Positioned(
                     top: 4,
                     right: 4,
-                    child: Icon(Icons.check_circle, color: Colors.redAccent),
+                    child: const Icon(Icons.check_circle, color: Colors.redAccent),
                   ),
               ],
             ),

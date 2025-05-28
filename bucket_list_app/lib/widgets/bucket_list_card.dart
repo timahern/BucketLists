@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 class BucketListPreviewCard extends StatelessWidget {
   final String title;
-  final List<String> mediaUrls;
-  final double completionRate; // from 0.0 to 1.0
+  final List<String> mediaUrls; // already preprocessed to include image URLs and video thumbnails
+  final double completionRate;
   final VoidCallback onTap;
 
   const BucketListPreviewCard({
@@ -24,7 +24,7 @@ class BucketListPreviewCard extends StatelessWidget {
       );
     }
 
-    List<Widget> imageWidgets = mediaUrls.map((url) {
+    final widgets = mediaUrls.take(4).map((url) {
       return Image.network(
         url,
         fit: BoxFit.cover,
@@ -32,25 +32,25 @@ class BucketListPreviewCard extends StatelessWidget {
       );
     }).toList();
 
-    switch (imageWidgets.length) {
+    switch (widgets.length) {
       case 1:
-        return imageWidgets[0];
+        return widgets[0];
       case 2:
         return Row(
           children: [
-            Expanded(child: imageWidgets[0]),
-            Expanded(child: imageWidgets[1]),
+            Expanded(child: widgets[0]),
+            Expanded(child: widgets[1]),
           ],
         );
       case 3:
         return Row(
           children: [
-            Expanded(child: imageWidgets[0]),
+            Expanded(child: widgets[0]),
             Expanded(
               child: Column(
                 children: [
-                  Expanded(child: imageWidgets[1]),
-                  Expanded(child: imageWidgets[2]),
+                  Expanded(child: widgets[1]),
+                  Expanded(child: widgets[2]),
                 ],
               ),
             ),
@@ -59,14 +59,10 @@ class BucketListPreviewCard extends StatelessWidget {
       case 4:
       default:
         return GridView.count(
-          physics: const NeverScrollableScrollPhysics(),
           crossAxisCount: 2,
-          children: imageWidgets
-              .take(4)
-              .map((img) => Padding(
-                    padding: const EdgeInsets.all(1),
-                    child: img,
-                  ))
+          physics: const NeverScrollableScrollPhysics(),
+          children: widgets
+              .map((widget) => Padding(padding: const EdgeInsets.all(1), child: widget))
               .toList(),
         );
     }
@@ -77,7 +73,7 @@ class BucketListPreviewCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: AspectRatio(
-        aspectRatio: 1, // Square
+        aspectRatio: 1,
         child: Card(
           clipBehavior: Clip.antiAlias,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -121,7 +117,7 @@ class BucketListPreviewCard extends StatelessWidget {
                       Text(
                         '${(completionRate * 100).round()}%',
                         style: const TextStyle(
-                          fontSize: 10,
+                          fontSize: 9,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                         ),
