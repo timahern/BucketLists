@@ -1,16 +1,16 @@
 import 'dart:typed_data';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../models/bucket_media.dart';
 import 'package:http/http.dart' as http;
 
 class ManageMediaScreen extends StatefulWidget {
-  final List<String> mediaUrls;
-  final Map<String, String> videoThumbnails;
+  final String itemId;
   final Function(List<String>) onDelete;
 
   const ManageMediaScreen({
     super.key,
-    required this.mediaUrls,
-    required this.videoThumbnails,
+    required this.itemId,
     required this.onDelete,
   });
 
@@ -18,45 +18,44 @@ class ManageMediaScreen extends StatefulWidget {
   State<ManageMediaScreen> createState() => _ManageMediaScreenState();
 }
 
+
 class _ManageMediaScreenState extends State<ManageMediaScreen> {
   Set<String> selectedUrls = {};
-  Map<String, Uint8List?> _loadedThumbnails = {};
+  List<String> mediaUrls = [];
+  //Map<String, Uint8List?> _loadedThumbnails = {};
 
   @override
   void initState() {
     super.initState();
-    _generateThumbnails();
+    _loadUrls();
+  }
+
+    Future<void> _loadUrls() async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('bucket_media')
+        .where('itemId', isEqualTo: widget.itemId)
+        .get();
+
+    final urls = snapshot.docs.map((doc) {
+      final data = doc.data();
+      final isVideo = data['isVideo'] ?? false;
+      final thumb = data['thumbnailUrl'];
+      final url = data['mediaUrl'];
+
+      return (isVideo && thumb != null && thumb.isNotEmpty) ? thumb : url;
+    }).toList();
+
+    setState(() {
+      mediaUrls = urls.cast<String>();
+    });
   }
 
   bool isVideo(String url) {
-    return url.toLowerCase().contains('.mp4'); // add other formats if needed
+    return url.toLowerCase().contains('.mp4') ||
+          url.toLowerCase().contains('.mov') ||
+          url.toLowerCase().contains('.webm');
   }
 
-  Future<void> _generateThumbnails() async {
-    for (String videoUrl in widget.mediaUrls) {
-      if (isVideo(videoUrl)) {
-        final thumbUrl = widget.videoThumbnails[videoUrl];
-        if (thumbUrl != null && thumbUrl.isNotEmpty) {
-          try {
-            final response = await http.get(Uri.parse(thumbUrl));
-            if (response.statusCode == 200) {
-              if (mounted) {
-                setState(() {
-                  _loadedThumbnails[videoUrl] = response.bodyBytes;
-                });
-              }
-            } else {
-              print("⚠️ Failed to load thumbnail from $thumbUrl (status: ${response.statusCode})");
-            }
-          } catch (e) {
-            print("❌ Error fetching thumbnail for $videoUrl: $e");
-          }
-        } else {
-          print("⚠️ No thumbnail URL found for video: $videoUrl");
-        }
-      }
-    }
-  }
 
   void toggleSelection(String url) {
     setState(() {
@@ -99,10 +98,10 @@ class _ManageMediaScreenState extends State<ManageMediaScreen> {
 
   void selectAllOrNone() {
     setState(() {
-      if (selectedUrls.length == widget.mediaUrls.length) {
+      if (selectedUrls.length == mediaUrls.length) {
         selectedUrls.clear(); // unselect all
       } else {
-        selectedUrls = widget.mediaUrls.toSet(); // select all
+        selectedUrls = mediaUrls.toSet(); // select all
       }
     });
   }
@@ -117,17 +116,17 @@ class _ManageMediaScreenState extends State<ManageMediaScreen> {
             child: GestureDetector(
               onTap: () {
                 setState(() {
-                  if (selectedUrls.length == widget.mediaUrls.length) {
+                  if (selectedUrls.length == mediaUrls.length) {
                     selectedUrls.clear();
                   } else {
-                    selectedUrls = widget.mediaUrls.toSet();
+                    selectedUrls = mediaUrls.toSet();
                   }
                 });
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
-                  selectedUrls.length == widget.mediaUrls.length ? 'Unselect All' : 'Select All',
+                  selectedUrls.length == mediaUrls.length ? 'Unselect All' : 'Select All',
                   style: const TextStyle(
                     color: Colors.black,
                     fontWeight: FontWeight.bold,
@@ -149,28 +148,24 @@ class _ManageMediaScreenState extends State<ManageMediaScreen> {
           mainAxisSpacing: 8,
           crossAxisSpacing: 8,
         ),
-        itemCount: widget.mediaUrls.length,
+        itemCount: mediaUrls.length,
         itemBuilder: (context, index) {
-          final url = widget.mediaUrls[index];
+          final url = mediaUrls[index];
           final isSelected = selectedUrls.contains(url);
-          final isVideoFile = isVideo(url);
-
-          Widget thumbnailWidget;
-
-          if (isVideoFile) {
-            final thumbnail = _loadedThumbnails[url];
-            thumbnailWidget = thumbnail != null
-                ? Image.memory(thumbnail, fit: BoxFit.cover, width: double.infinity)
-                : Container(color: Colors.black12);
-          } else {
-            thumbnailWidget = Image.network(url, fit: BoxFit.cover, width: double.infinity);
-          }
 
           return GestureDetector(
             onTap: () => toggleSelection(url),
             child: Stack(
               children: [
-                thumbnailWidget,
+                Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: Colors.grey[300],
+                    child: const Center(child: Icon(Icons.broken_image)),
+                  ),
+                ),
                 if (isSelected)
                   Positioned(
                     top: 4,
@@ -184,4 +179,5 @@ class _ManageMediaScreenState extends State<ManageMediaScreen> {
       ),
     );
   }
+
 }

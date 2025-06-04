@@ -1,23 +1,20 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+
 
 class BucketItem {
-  String id; //unique id for the item
+  String itemId;
   String itemName;
   bool completed;
-  DocumentReference bucketListRef; // Reference back to its parent bucket list
-  List<String> mediaUrls; //list of urls for the photos or videos associated with each bucket item
+  String listId; // string ID of the parent bucket list
   String description;
-  Map<String, String> videoThumbnails;
-
 
   BucketItem({
-    required this.id,
+    this.itemId = '',
     required this.itemName,
-    required this.bucketListRef,
+    required this.listId,
     this.completed = false,
-    this.mediaUrls = const [],
     this.description = '',
-    this.videoThumbnails = const {},
   });
 
   // Convert BucketItem to Firestore Map
@@ -25,10 +22,8 @@ class BucketItem {
     return {
       'itemName': itemName,
       'completed': completed,
-      'bucket_list_ref': bucketListRef,
-      'mediaUrls': mediaUrls,
+      'listId': listId,
       'description': description,
-      'videoThumbnails': videoThumbnails,
     };
   }
 
@@ -36,20 +31,59 @@ class BucketItem {
   factory BucketItem.fromFirestore(DocumentSnapshot doc) {
     var data = doc.data() as Map<String, dynamic>;
 
-    // Safely cast the videoThumbnails map
-    final rawThumbnails = data['videoThumbnails'];
-    final videoThumbnails = rawThumbnails is Map<String, dynamic>
-        ? Map<String, String>.from(rawThumbnails)
-        : <String, String>{};
-
     return BucketItem(
-      id: doc.id,
+      itemId: doc.id,
       itemName: data['itemName'] ?? '',
       completed: data['completed'] ?? false,
-      bucketListRef: data['bucket_list_ref'],
-      mediaUrls: List<String>.from(data['mediaUrls'] ?? []),
+      listId: data['listId'] ?? '',
       description: data['description'] ?? '',
-      videoThumbnails: videoThumbnails,
     );
+  }
+
+  Future<void> deleteData() async {
+    final firestore = FirebaseFirestore.instance;
+    final storage = FirebaseStorage.instance;
+
+    try {
+      // 1️⃣ Query all media associated with this item
+      final mediaQuery = await firestore
+          .collection('bucket_media')
+          .where('itemId', isEqualTo: itemId)
+          .get();
+
+      for (final doc in mediaQuery.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+
+        final mediaUrl = data['mediaUrl'] as String?;
+        final thumbnailUrl = data['thumbnailUrl'] as String?;
+
+        // 2️⃣ Delete media from Firebase Storage
+        if (mediaUrl != null && mediaUrl.isNotEmpty) {
+          try {
+            await storage.refFromURL(mediaUrl).delete();
+          } catch (e) {
+            print('Error deleting media: $e');
+          }
+        }
+
+        // 3️⃣ Delete thumbnail if it exists
+        if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
+          try {
+            await storage.refFromURL(thumbnailUrl).delete();
+          } catch (e) {
+            print('Error deleting thumbnail: $e');
+          }
+        }
+
+        // 4️⃣ Delete the media document itself
+        await doc.reference.delete();
+      }
+
+      // 5️⃣ Delete the bucket item document
+      await firestore.collection('bucket_items').doc(itemId).delete();
+
+    } catch (e) {
+      print('Error deleting bucket item and its media: $e');
+    }
   }
 }

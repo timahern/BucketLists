@@ -5,10 +5,7 @@ import '../models/bucket_list.dart';
 import '../models/bucket_item.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import '../widgets/bucket_item_card.dart';
-
-
 
 class BucketListScreen extends StatefulWidget {
   final BucketList bucketList;
@@ -25,7 +22,7 @@ class BucketListScreen extends StatefulWidget {
 }
 
 class _BucketListScreenState extends State<BucketListScreen> {
-  List<DocumentSnapshot> bucketItems = [];
+  List<BucketItem> bucketItems = [];
 
   @override
   void initState() {
@@ -34,24 +31,30 @@ class _BucketListScreenState extends State<BucketListScreen> {
   }
 
   Future<void> _loadBucketItems() async {
-    if (widget.bucketList.items.isEmpty) {
+    print('NOW USING LOADING BUCKET LISTS');
+    try {
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('bucket_items')
+          .where('listId', isEqualTo: widget.bucketList.listId)
+          .get();
+
+      final items = querySnapshot.docs.map((doc) => BucketItem.fromFirestore(doc)).toList();
+
+      setState(() {
+        print('BUCKET LISTS HAVE BEEN UPDATED');
+        bucketItems = items;
+      });
+    } catch (e) {
+      print("Error loading bucket items: $e");
       setState(() {
         bucketItems = [];
       });
-      return;
     }
-
-    List<DocumentSnapshot> fetchedItems = await Future.wait(
-      widget.bucketList.items.map((ref) => ref.get()).toList(),
-    );
-
-    setState(() {
-      bucketItems = fetchedItems;
-    });
   }
 
   Future<void> _addItem() async {
     final controller = TextEditingController();
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -63,60 +66,32 @@ class _BucketListScreenState extends State<BucketListScreen> {
         actions: [
           TextButton(
             onPressed: () async {
-              if (controller.text.trim().isEmpty) return;
+              final itemName = controller.text.trim();
+              if (itemName.isEmpty) return;
 
-              final bucketListDocRef = FirebaseFirestore.instance
-                  .collection('bucket_lists')
-                  .doc(widget.bucketList.id);
-
-              // 1️⃣ create new bucket item object and use bucket item's toMap() function to send it to firebase
               final newBucketItem = BucketItem(
-                id: '', 
-                itemName: controller.text.trim(),
-                completed: false,
-                bucketListRef: bucketListDocRef,
-                mediaUrls: [], // default
-                description: '', // default
+                itemName: itemName,
+                listId: widget.bucketList.listId,
               );
 
-              DocumentReference newItemRef = await FirebaseFirestore.instance
+              await FirebaseFirestore.instance
                   .collection('bucket_items')
                   .add(newBucketItem.toMap());
 
-              // 2️⃣ Add reference to the parent bucket list doc
-              await bucketListDocRef.update({
-                'items': FieldValue.arrayUnion([newItemRef])
-              });
-
-              // 3️⃣ Refresh the parent list's reference array
-              final updatedDoc = await bucketListDocRef.get();
-              widget.bucketList.items = List<DocumentReference>.from(updatedDoc['items']);
-
-              // 4️⃣ Reload bucket items & close dialog
               Navigator.of(context).pop();
               await _loadBucketItems();
               widget.onUpdate();
             },
             child: const Text('Add'),
-          )
+          ),
         ],
       ),
     );
   }
 
-
-  Future<void> _toggleComplete(int index) async {
-    final itemDoc = bucketItems[index];
-    await itemDoc.reference.update({
-      'completed': !(itemDoc['completed'] as bool),
-    });
-    await _loadBucketItems();
-    widget.onUpdate();
-  }
-
   Future<void> _editBucketItem(int index) async {
-    final itemDoc = bucketItems[index];
-    final controller = TextEditingController(text: itemDoc['itemName']);
+    final item = bucketItems[index];
+    final controller = TextEditingController(text: item.itemName);
 
     showDialog(
       context: context,
@@ -129,9 +104,11 @@ class _BucketListScreenState extends State<BucketListScreen> {
         actions: [
           TextButton(
             onPressed: () async {
-              await itemDoc.reference.update({
-                'itemName': controller.text.trim(),
-              });
+              await FirebaseFirestore.instance
+                  .collection('bucket_items')
+                  .doc(item.itemId)
+                  .update({'itemName': controller.text.trim()});
+
               Navigator.of(context).pop();
               await _loadBucketItems();
               widget.onUpdate();
@@ -150,13 +127,9 @@ class _BucketListScreenState extends State<BucketListScreen> {
   }
 
   Future<void> _deleteBucketItem(int index) async {
-    final itemDoc = bucketItems[index];
-    final bucketListDocRef = FirebaseFirestore.instance
-        .collection('bucket_lists')
-        .doc(widget.bucketList.id);
+    final item = bucketItems[index];
 
     try {
-      // 0️⃣ Show loading dialog
       showDialog(
         barrierDismissible: false,
         context: context,
@@ -164,80 +137,29 @@ class _BucketListScreenState extends State<BucketListScreen> {
           return AlertDialog(
             backgroundColor: Colors.white,
             content: Row(
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(width: 20),
-                const Text('Deleting...'),
+              children: const [
+                CircularProgressIndicator(),
+                SizedBox(width: 20),
+                Text('Deleting...'),
               ],
             ),
           );
         },
       );
 
-      // 1️⃣ Delete all associated media files
-      List<dynamic> mediaUrls = itemDoc['mediaUrls'] ?? [];
-      Map<String, dynamic> videoThumbnailsRaw = itemDoc['videoThumbnails'] ?? {};
-      Map<String, String> videoThumbnails = videoThumbnailsRaw.map(
-        (key, value) => MapEntry(key.toString(), value.toString()),
-      );
+      await item.deleteData();
 
-      for (String url in mediaUrls) {
-        try {
-          // Delete the media file
-          final ref = FirebaseStorage.instance.refFromURL(url);
-          await ref.delete();
-          print('✅ Deleted media: $url');
-        } catch (e) {
-          print('❌ Failed to delete media: $url, error: $e');
-        }
-
-        // Delete associated video thumbnail, if it's a video
-        if (url.toLowerCase().contains('.mp4') && videoThumbnails.containsKey(url)) {
-          final thumbUrl = videoThumbnails[url];
-          if (thumbUrl != null) {
-            try {
-              print('🔍 Attempting to delete thumbnail: $thumbUrl');
-              final thumbRef = FirebaseStorage.instance.refFromURL(thumbUrl);
-              await thumbRef.delete();
-              print('✅ Deleted thumbnail: $thumbUrl');
-            } catch (e) {
-              print('❌ Failed to delete thumbnail: $thumbUrl, error: $e');
-            }
-          }
-        }
-      }
-
-      // 2️⃣ Remove reference from bucket_list document
-      await bucketListDocRef.update({
-        'items': FieldValue.arrayRemove([itemDoc.reference])
-      });
-
-      // 3️⃣ Delete the actual bucket item document
-      await itemDoc.reference.delete();
-      print('✅ Bucket item deleted');
-
-      // 4️⃣ Refresh parent bucket list's reference array
-      final updatedDoc = await bucketListDocRef.get();
-      widget.bucketList.items = List<DocumentReference>.from(updatedDoc['items']);
-
-      // 5️⃣ Reload bucket items
       await _loadBucketItems();
       widget.onUpdate();
     } catch (e) {
-      print('❌ Failed to fully delete bucket item: $e');
+      print('❌ Failed to delete bucket item: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to delete bucket item: $e')),
       );
     } finally {
-      // 6️⃣ Always dismiss the loading dialog
-      if (mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-      }
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
     }
   }
-
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -270,13 +192,6 @@ class _BucketListScreenState extends State<BucketListScreen> {
                               fontSize: 32,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
-                              shadows: [
-                                //Shadow(
-                                //  color: Colors.black38,
-                                //  offset: Offset(2, 2),
-                                //  blurRadius: 4,
-                                //),
-                              ],
                             ),
                           ),
                         ),
@@ -311,14 +226,12 @@ class _BucketListScreenState extends State<BucketListScreen> {
                 itemBuilder: (context, index) {
                   final item = bucketItems[index];
                   return Slidable(
-                    key: ValueKey(item.id),
+                    key: ValueKey(item.itemId),
                     startActionPane: ActionPane(
                       motion: const ScrollMotion(),
                       children: [
                         SlidableAction(
-                          onPressed: (context) {
-                            _editBucketItem(index);
-                          },
+                          onPressed: (context) => _editBucketItem(index),
                           backgroundColor: Colors.blue,
                           foregroundColor: Colors.white,
                           icon: Icons.edit,
@@ -340,15 +253,11 @@ class _BucketListScreenState extends State<BucketListScreen> {
                                   actions: [
                                     TextButton(
                                       child: const Text('Cancel'),
-                                      onPressed: () {
-                                        Navigator.of(context).pop(false); // Don't delete
-                                      },
+                                      onPressed: () => Navigator.of(context).pop(false),
                                     ),
                                     TextButton(
                                       child: const Text('Delete'),
-                                      onPressed: () {
-                                        Navigator.of(context).pop(true); // Confirm deletion
-                                      },
+                                      onPressed: () => Navigator.of(context).pop(true),
                                     ),
                                   ],
                                 );
@@ -367,29 +276,30 @@ class _BucketListScreenState extends State<BucketListScreen> {
                       ],
                     ),
                     child: BucketItemCard(
-                      title: item['itemName'],
-                      //passing images to build the bucket item card. This will have to be reworked
-                      imageUrl: (item['mediaUrls'] != null && item['mediaUrls'].isNotEmpty)
-                        ? item['mediaUrls'][0]
-                        : null,
-                      completed: item['completed'],
-                      videoThumbnails: item['videoThumbnails'] != null
-                        ? Map<String, String>.from(item['videoThumbnails'] as Map)
-                        : {},
+                      key: ValueKey(item.itemId), // or any other changing value
+                      bucketItem: item,
                       onTap: () async {
                         await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (context) => BucketItemScreen(
-                              bucketItem: BucketItem.fromFirestore(item),
-                              onUpdate: widget.onUpdate,
+                              bucketItem: item,
+                              onUpdate: () async {
+                                print('onUpdate called from BucketItemScreen');
+                                //await Future.delayed(Duration(milliseconds: 300));
+                                await _loadBucketItems(); // ✅
+                                widget.onUpdate();         // ✅ notify home screen
+                              },
                             ),
                           ),
                         );
-                        await _loadBucketItems();
                       },
                     ),
 
+
+
+
+                    
                   );
                 },
               ),

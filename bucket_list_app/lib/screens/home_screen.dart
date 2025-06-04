@@ -1,4 +1,3 @@
-import 'package:bucket_list_app/models/bucket_item.dart';
 import 'package:bucket_list_app/screens/main_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -31,47 +30,38 @@ class _HomeScreenState extends State<HomeScreen> {
     // Use injected mockUser in tests, or FirebaseAuth in real app
     user = widget.mockUser ?? FirebaseAuth.instance.currentUser!;
 
-    if (widget.mockUser == null || !user.uid.startsWith('test')) {
-      _loadBucketLists();
-    }
+    //if (widget.mockUser == null || !user.uid.startsWith('test')) {
+      //_loadBucketLists();
+    //}
+    _loadBucketLists();
   }
 
   // Load bucket lists from Firestore
   Future<void> _loadBucketLists() async {
     final currentUser = FirebaseAuth.instance.currentUser;
     final snapshot = await FirebaseFirestore.instance
-      .collection('bucket_lists')
-      .where('userId', isEqualTo: currentUser?.uid)
-      .get();
+        .collection('bucket_lists')
+        .where('userId', isEqualTo: currentUser?.uid)
+        .get();
     
     List<BucketList> lists = [];
 
     for (var doc in snapshot.docs) {
       final bucketList = BucketList.fromFirestore(doc);
 
-      // Fetch all bucket items linked to this list
-      List<BucketItem> fetchedItems = [];
-
-      // Parallelize item fetches with Future.wait
-      final futures = bucketList.items.map((ref) => ref.get()).toList();
-      final itemDocs = await Future.wait(futures);
-
-      for (var itemDoc in itemDocs) {
-        fetchedItems.add(BucketItem.fromFirestore(itemDoc));
-      }
-
-      // Update ratio with fetched items
-      bucketList.updateCompletionRatio(fetchedItems);
+      // Update the ratio using function from bucket list object
+      bucketList.updateCompletionRatio();
 
       lists.add(bucketList);
     }
 
-    if (!mounted) return; // <- 🔐 important safeguard
+    if (!mounted) return;
 
     setState(() {
       bucketLists = lists;
     });
   }
+
 
 
   bool get isInTestMode {
@@ -113,7 +103,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
               await FirebaseFirestore.instance.collection('bucket_lists').add({
                 'title': trimmedTitle,
-                'items': [],
                 'userId': uid,
               });
 
@@ -127,45 +116,50 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  bool isVideo(String url) {
-    final path = Uri.parse(url).path.toLowerCase();
-    return path.endsWith('.mp4') || path.contains('.mp4');
-  }
+  //bool isVideo(String url) {
+  //  final path = Uri.parse(url).path.toLowerCase();
+  //  return path.endsWith('.mp4') || path.contains('.mp4');
+  //}
 
-  Future<List<String>> getPreviewMediaUrls(List<DocumentReference> itemRefs) async {
+  Future<List<String>> getPreviewMediaUrls(String listId) async {
     List<String> previewUrls = [];
 
-    for (final ref in itemRefs) {
-      final doc = await ref.get();
-      final data = doc.data() as Map<String, dynamic>?;
+    // Step 1: Get all bucket items for this list
+    final itemsSnapshot = await FirebaseFirestore.instance
+        .collection('bucket_items')
+        .where('listId', isEqualTo: listId)
+        .get();
 
-      if (data == null) continue;
-
-      final mediaUrls = List<String>.from(data['mediaUrls'] ?? []);
-      final Map<String, dynamic> videoThumbsRaw = data['videoThumbnails'] ?? {};
-      final Map<String, String> videoThumbnails = videoThumbsRaw.map((key, value) => MapEntry(key.toString(), value.toString()));
-
-      if (mediaUrls.isNotEmpty) {
-        final firstUrl = mediaUrls.first;
-
-        if (isVideo(firstUrl)) {
-          final thumbUrl = videoThumbnails[firstUrl];
-          if (thumbUrl != null) {
-            previewUrls.add(thumbUrl);
-          } else {
-            // fallback to the video itself if thumbnail is missing
-            previewUrls.add(firstUrl);
-          }
-        } else {
-          previewUrls.add(firstUrl);
-        }
-      }
-
+    // Step 2: Loop through each item
+    for (var itemDoc in itemsSnapshot.docs) {
       if (previewUrls.length == 4) break;
+
+      final itemId = itemDoc.id;
+      // Step 3: Get media for this item
+      final mediaSnapshot = await FirebaseFirestore.instance
+          .collection('bucket_media')
+          .where('itemId', isEqualTo: itemId)
+          .limit(1) // Only want the first media per item
+          .get();
+
+      if (mediaSnapshot.docs.isEmpty) continue;
+
+      final mediaData = mediaSnapshot.docs.first.data();
+      final isVideo = mediaData['isVideo'] ?? false;
+
+      if (isVideo) {
+        final thumbUrl = mediaData['thumbnailUrl'];
+        if (thumbUrl != null && thumbUrl is String && thumbUrl.isNotEmpty) {
+          previewUrls.add(thumbUrl);
+        }
+      } else {
+        previewUrls.add(mediaData['mediaUrl'] ?? '');
+      }
     }
 
     return previewUrls;
   }
+
 
 
 
@@ -187,7 +181,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () async {
               await FirebaseFirestore.instance
                   .collection('bucket_lists')
-                  .doc(list.id)
+                  .doc(list.listId)
                   .update({'title': controller.text}); // Update title
               _loadBucketLists(); // Reload lists after updating
               Navigator.of(context).pop(); // Close dialog
@@ -231,89 +225,46 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Delete bucket list from Firestore
   Future<void> _deleteBucketList(BucketList list) async {
-    final bucketListRef = FirebaseFirestore.instance.collection('bucket_lists').doc(list.id);
-
     try {
       // 0️⃣ Show loading dialog
       showDialog(
         barrierDismissible: false,
         context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            backgroundColor: Colors.white,
-            content: Row(
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(width: 20),
-                const Text('Deleting...'),
-              ],
-            ),
-          );
-        },
+        builder: (_) => AlertDialog(
+          backgroundColor: Colors.white,
+          content: Row(
+            children: const [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text('Deleting...'),
+            ],
+          ),
+        ),
       );
 
-      // 1️⃣ Find all bucket items related to this list
-      final itemsQuery = await FirebaseFirestore.instance
-          .collection('bucket_items')
-          .where('bucket_list_ref', isEqualTo: bucketListRef)
-          .get();
+      // 1️⃣ Use the deleteData method from the BucketList class
+      await list.deleteData();
 
-      // 2️⃣ For each bucket item, delete associated media and thumbnails
-      for (var doc in itemsQuery.docs) {
-        List<dynamic> mediaUrls = doc['mediaUrls'] ?? [];
-
-        Map<String, dynamic> videoThumbnailsRaw = doc['videoThumbnails'] ?? {};
-        Map<String, String> videoThumbnails = videoThumbnailsRaw.map(
-          (key, value) => MapEntry(key.toString(), value.toString()),
-        );
-
-        for (String url in mediaUrls) {
-          try {
-            final ref = FirebaseStorage.instance.refFromURL(url);
-            await ref.delete();
-            print('✅ Deleted media: $url');
-          } catch (e) {
-            print('❌ Failed to delete media: $url, error: $e');
-          }
-
-          // Delete thumbnail if this is a video
-          if (url.toLowerCase().contains('.mp4') && videoThumbnails.containsKey(url)) {
-            final thumbUrl = videoThumbnails[url];
-            if (thumbUrl != null) {
-              try {
-                final thumbRef = FirebaseStorage.instance.refFromURL(thumbUrl);
-                await thumbRef.delete();
-                print('✅ Deleted thumbnail: $thumbUrl');
-              } catch (e) {
-                print('❌ Failed to delete thumbnail: $thumbUrl, error: $e');
-              }
-            }
-          }
-        }
-
-        // 3️⃣ Delete the bucket item document
-        await doc.reference.delete();
-        print('✅ Deleted bucket item: ${doc.id}');
-      }
-
-      // 4️⃣ Delete the bucket list itself
-      await bucketListRef.delete();
-      print('✅ Deleted bucket list: ${list.id}');
-
-      // 5️⃣ Refresh home screen list
+      // 2️⃣ Refresh home screen data
       await _loadBucketLists();
+
+      print('✅ Deleted bucket list and all associated data');
     } catch (e) {
-      print('❌ Failed to fully delete bucket list: $e');
+      print('❌ Failed to delete bucket list: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to delete bucket list: $e')),
       );
     } finally {
-      // 6️⃣ Dismiss the loading dialog
-      Navigator.of(context, rootNavigator: true).pop();
+      // 3️⃣ Dismiss loading dialog
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
     }
   }
 
 
+
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -374,7 +325,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     final list = bucketLists[index];
 
                     return FutureBuilder<List<String>>(
-                      future: getPreviewMediaUrls(list.items),
+                      future: getPreviewMediaUrls(list.listId),
                       builder: (context, snapshot) {
                         final mediaUrls = snapshot.data ?? [];
 

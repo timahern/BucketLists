@@ -1,71 +1,95 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../models/bucket_item.dart'; // Adjust this import as needed
 
-class BucketItemCard extends StatelessWidget {
-  final String title;
-  final bool completed;
-  final String? imageUrl;
-  final Map<String, String> videoThumbnails; // <videoUrl, thumbnailUrl>
+class BucketItemCard extends StatefulWidget {
+  final BucketItem bucketItem;
   final VoidCallback onTap;
 
   const BucketItemCard({
     Key? key,
-    required this.title,
-    required this.completed,
-    required this.imageUrl,
-    required this.videoThumbnails,
+    required this.bucketItem,
     required this.onTap,
   }) : super(key: key);
 
-  bool isVideo(String url) {
-    return url.toLowerCase().contains('.mp4') ||
-           url.toLowerCase().contains('.mov') ||
-           url.toLowerCase().contains('.webm');
+  @override
+  State<BucketItemCard> createState() => _BucketItemCardState();
+}
+
+class _BucketItemCardState extends State<BucketItemCard> {
+  String? imageUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreviewImage();
+  }
+
+  @override
+  void didUpdateWidget(covariant BucketItemCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // Reload preview image if the item has changed
+    if (oldWidget.bucketItem.itemId != widget.bucketItem.itemId ||
+        oldWidget.bucketItem != widget.bucketItem) {
+      _loadPreviewImage();
+    }
+  }
+
+  Future<void> _loadPreviewImage() async {
+    try {
+      final mediaQuery = await FirebaseFirestore.instance
+          .collection('bucket_media')
+          .where('itemId', isEqualTo: widget.bucketItem.itemId)
+          .limit(1)
+          .get();
+
+      if (mediaQuery.docs.isNotEmpty) {
+        final data = mediaQuery.docs.first.data();
+        final thumbnailUrl = data['thumbnailUrl'] as String?;
+        final mediaUrl = data['mediaUrl'] as String?;
+
+        setState(() {
+          imageUrl = (thumbnailUrl != null && thumbnailUrl.isNotEmpty)
+              ? thumbnailUrl
+              : mediaUrl;
+        });
+      } else {
+        setState(() {
+          imageUrl = null;
+        });
+      }
+    } catch (e) {
+      print('❌ Error loading media for bucket item: $e');
+    }
   }
 
   Widget _buildMedia() {
-    final url = imageUrl;
-
-    if (url == null) {
-      return Container(height: 150, color: Colors.grey[300]);
+    if (imageUrl == null) {
+      return Container(
+        height: 150,
+        color: Colors.grey[300],
+        child: const Center(child: Icon(Icons.photo, color: Colors.white)),
+      );
     }
 
-    if (isVideo(url)) {
-      final thumbUrl = videoThumbnails[url];
-      if (thumbUrl != null && thumbUrl.isNotEmpty) {
-        return Image.network(
-          thumbUrl,
-          height: 150,
-          width: double.infinity,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            height: 150,
-            color: Colors.black26,
-            child: const Center(child: Icon(Icons.videocam_off, color: Colors.white)),
-          ),
-        );
-      } else {
-        return Container(
-          height: 150,
-          color: Colors.black26,
-          child: const Center(child: Icon(Icons.videocam_off, color: Colors.white)),
-        );
-      }
-    }
-
-    // If not a video, just show the image
     return Image.network(
-      url,
+      imageUrl!,
       height: 150,
       width: double.infinity,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => Container(height: 150, color: Colors.grey[300]),
+      errorBuilder: (_, __, ___) => Container(
+        height: 150,
+        color: Colors.grey[300],
+        child: const Center(child: Icon(Icons.broken_image)),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Card(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -85,7 +109,7 @@ class BucketItemCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        title,
+                        widget.bucketItem.itemName,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 18,
@@ -93,7 +117,7 @@ class BucketItemCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (completed)
+                    if (widget.bucketItem.completed)
                       const Icon(
                         Icons.check_circle,
                         color: Colors.greenAccent,
