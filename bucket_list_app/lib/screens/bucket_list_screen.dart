@@ -6,6 +6,8 @@ import '../models/bucket_item.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/bucket_item_card.dart';
+import 'package:bucket_list_app/widgets/custom_home_bar.dart';
+
 
 class BucketListScreen extends StatefulWidget {
   final BucketList bucketList;
@@ -306,9 +308,12 @@ class _BucketListScreenState extends State<BucketListScreen> {
             ),
           ],
         ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: _addItem,
-          child: const Icon(Icons.add),
+        bottomNavigationBar: CustomHomeBar(
+          currentIndex: 0,
+          onAdd: () {
+            _addItem();
+          },
+          isBucketListScreen: true,
         ),
       ),
     );

@@ -1,4 +1,5 @@
 import 'package:bucket_list_app/screens/main_page.dart';
+import 'package:bucket_list_app/widgets/custom_home_bar.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -406,30 +407,14 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            MaterialButton(
-              onPressed: () async {
-                FirebaseAuth.instance.signOut();
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (context) => MainPage()),
-                  (route) => false,
-                );
-              },
-              color: Colors.deepPurple[200],
-              child: const Text('sign out'),
-            ),
-            FloatingActionButton(
-              onPressed: _addBucketList,
-              child: const Icon(Icons.add),
-            ),
-          ],
-        ),
+      bottomNavigationBar: CustomHomeBar(
+        currentIndex: 0,
+        onAdd: () {
+          _addBucketList();
+        },
+        isBucketListScreen: false,
       ),
+
     );
   }
 
