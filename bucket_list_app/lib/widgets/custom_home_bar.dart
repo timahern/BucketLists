@@ -29,7 +29,7 @@ class CustomHomeBar extends StatelessWidget {
             );
             break;
           case 1:
-            onAdd(); // 💥 Use the passed-in callback
+            onAdd(); 
             break;
           case 2:
             Navigator.pushReplacement(

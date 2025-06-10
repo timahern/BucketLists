@@ -100,28 +100,28 @@ class BucketListPreviewCard extends StatelessWidget {
                 ),
               ),
               Positioned(
-                bottom: 6,
-                right: 6,
+                bottom: 8,
+                right: 8,
                 child: SizedBox(
-                  width: 25,
-                  height: 25,
+                  width: 18,
+                  height: 18,
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
                       CircularProgressIndicator(
                         value: completionRate,
-                        strokeWidth: 3,
+                        strokeWidth: 5,
                         backgroundColor: Colors.white24,
                         valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
                       ),
-                      Text(
-                        '${(completionRate * 100).round()}%',
-                        style: const TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
+                      //Text(
+                      //  '${(completionRate * 100).round()}%',
+                      //  style: const TextStyle(
+                      //    fontSize: 9,
+                      //    fontWeight: FontWeight.bold,
+                      //    color: Colors.white,
+                      //  ),
+                      //),
                     ],
                   ),
                 ),

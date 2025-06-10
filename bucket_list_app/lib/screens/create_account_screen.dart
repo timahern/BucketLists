@@ -1,3 +1,4 @@
+import 'package:bucket_list_app/screens/create_profile_screen.dart';
 import 'package:bucket_list_app/screens/login_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -28,7 +29,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
       );
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => LoginScreen(successMessage: 'New user successfully created, log in now')),
+        MaterialPageRoute(builder: (context) => const CreateProfile()),
       );
     } on FirebaseAuthException catch (e) {
       String errorMessage;
