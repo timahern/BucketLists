@@ -1,5 +1,7 @@
 import 'package:bucket_list_app/screens/create_account_screen.dart';
+import 'package:bucket_list_app/screens/create_profile_screen.dart';
 import 'package:bucket_list_app/screens/home_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -41,17 +43,41 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future signIn() async {
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
 
-      if (!mounted) return; // <-- prevents calling context if widget is disposed
+      final user = credential.user;
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => HomeScreen()),
-      );
+      if (user == null || !mounted) return;
+
+      print('The USER ID ISS: ' + user.uid);
+      // 🔍 Check if user profile exists
+      final profileDoc = await FirebaseFirestore.instance
+        .collection('user_profiles')
+        .where('userId', isEqualTo: user.uid)
+        .limit(1)
+        .get();
+
+      if (!mounted) return;
+      
+      if (profileDoc.docs.isEmpty) {
+        
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const CreateProfile()),
+        );
+        
+      } else {
+
+       
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => HomeScreen()),
+        );
+        
+      }
     } on FirebaseAuthException catch (e) {
       String errorMessage;
       if (e.code == 'user-not-found') {
@@ -64,7 +90,6 @@ class _LoginScreenState extends State<LoginScreen> {
         errorMessage = 'An unexpected error occurred. Please try again.';
       }
 
-      // Show snackbar
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(errorMessage),
@@ -73,6 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     }
   }
+
 
 
   @override
