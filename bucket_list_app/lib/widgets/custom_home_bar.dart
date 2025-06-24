@@ -23,18 +23,20 @@ class CustomHomeBar extends StatelessWidget {
 
         switch (index) {
           case 0:
-            Navigator.pushReplacement(
+            Navigator.pushAndRemoveUntil(
               context,
               MaterialPageRoute(builder: (_) => const HomeScreen()),
+              (route) => false,
             );
             break;
           case 1:
             onAdd(); 
             break;
           case 2:
-            Navigator.pushReplacement(
+            Navigator.pushAndRemoveUntil(
               context,
               MaterialPageRoute(builder: (_) => const ProfileScreen()),
+              (route) => false,
             );
             break;
           

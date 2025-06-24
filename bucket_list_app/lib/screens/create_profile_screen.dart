@@ -234,7 +234,7 @@ class _CreateProfileState extends State<CreateProfile> {
                     // Big circular avatar
                     GestureDetector(
                       onTap: _pickImage,
-                      onLongPress: removePfp,
+                      onLongPress: _selectedImage != null ? removePfp : null,
                       child: CircleAvatar(
                         radius: 60,
                         backgroundColor: Colors.grey[300],
